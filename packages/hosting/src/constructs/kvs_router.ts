@@ -831,7 +831,11 @@ export const generateEdgeBasePathStripCode = (basePath: string): string => {
 /**
  * Viewer-response CloudFront Function (JS 2.0). Two jobs:
  *   1. Skew protection: set `__dpl` cookie to the active buildId on successful
- *      HTML responses (status-gated, per the original semantics).
+ *      HTML responses (status-gated, per the original semantics). A `304 Not
+ *      Modified` carries no `Content-Type`, so a 304 for a static HTML
+ *      document (the request fn rewrote its URI to `/builds/<id>/….html`) is
+ *      stamped too: HTML is revalidated rather than re-downloaded, and without
+ *      this a repeat visit would never move the cookie to a new build.
  *   2. Per-pattern response headers: apply the manifest's `headers[]` rules by
  *      matching the request URI against the header table in KVS (the
  *      single-behavior replacement for per-pattern ResponseHeadersPolicies).
@@ -858,7 +862,7 @@ ${headerRowsJs('hrows', '    ')}
     skewMaxAge > 0
       ? `if (response.statusCode < 400) {
     var ct = response.headers['content-type'] ? response.headers['content-type'].value : '';
-    if (ct.indexOf('text/html') >= 0) {
+    if (ct.indexOf('text/html') >= 0 || (response.statusCode === 304 && request.uri.slice(-5) === '.html')) {
       response.cookies['__dpl'] = { value: meta.b, attributes: 'Path=/; SameSite=Lax; Max-Age=${skewMaxAge}' };
     }
   }`

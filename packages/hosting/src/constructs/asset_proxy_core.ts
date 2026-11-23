@@ -19,7 +19,7 @@
  *      its Content-Type, its stored Cache-Control (a default only when it has
  *      none) and its validators (`ETag`, `Last-Modified`);
  *   3. a conditional request (`If-None-Match`, `If-Modified-Since`) the object
- *      still matches → a body-less 304;
+ *      still matches → a body-less 304, with the same header rules as the 200;
  *   4. a compressible file (text, JSON, JavaScript, SVG, …) of 1 KiB or more
  *      is gzipped when the client accepts it (`Vary: accept-encoding`; the
  *      validator becomes weak), so it travels — and fits the door's response
@@ -28,7 +28,8 @@
  *      any other S3 failure → 500, with the app's server-error page (each page
  *      is read once per Lambda instance — the prefix is fixed per build);
  *   6. every matching header rule is applied to a successful (non-error,
- *      non-redirect) response, as a CloudFront viewer-response function is;
+ *      non-redirect) response, a 304 included, as a CloudFront viewer-response
+ *      function is;
  *   7. every response carries the baseline security headers the CloudFront
  *      door's policy adds (`Strict-Transport-Security: max-age=31536000`,
  *      `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`,
@@ -392,6 +393,10 @@ async function serveUri(requestUri, requestHeaders) {
       const headers = {};
       const sent = req['if-none-match'];
       if (sent && sent.indexOf(',') === -1 && sent.trim() !== '*') headers.etag = sent.trim();
+      // The app's header rules too: a cache updates its stored headers from a
+      // 304, so leaving them off lets the baseline values replace them.
+      const rule = blocksHeaders(requestUri);
+      for (const name in rule) headers[name] = rule[name];
       return { statusCode: 304, headers, body: '', isBase64Encoded: false };
     }
     // A miss is a 404. Extensionless SPA paths already resolved to index.html

@@ -410,6 +410,31 @@ for (const [label, generate, event] of variants) {
       }
       assert.equal((await proxy(event('/assets/big-abc.js'))).headers['x-frame-options'], 'DENY');
     });
+
+    it("a 304 for an HTML page carries the app's header rules, as its 200 does", async () => {
+      const rules = {
+        'Referrer-Policy': 'no-referrer',
+        'X-Frame-Options': 'DENY',
+        'Content-Security-Policy': "default-src 'self'",
+      };
+      const proxy = loadHandler(generate({ spaFallback: false, headers: [{ pattern: '/*', headers: rules }] }), {
+        [`${PREFIX}/index.html`]: {
+          body: '<html>home</html>',
+          contentType: 'text/html',
+          cacheControl: 'public, max-age=0, must-revalidate',
+          etag: '"home-etag"',
+        },
+      });
+      const first = await proxy(event('/'));
+      assert.equal(first.statusCode, 200);
+      const again = await proxy(event('/', { 'if-none-match': first.headers.etag ?? '' }));
+      assert.equal(again.statusCode, 304);
+      for (const res of [first, again]) {
+        assert.equal(res.headers['referrer-policy'], 'no-referrer', `${res.statusCode}`);
+        assert.equal(res.headers['x-frame-options'], 'DENY', `${res.statusCode}`);
+        assert.equal(res.headers['content-security-policy'], "default-src 'self'", `${res.statusCode}`);
+      }
+    });
   });
 }
 

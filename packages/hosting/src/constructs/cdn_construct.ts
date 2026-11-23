@@ -1078,7 +1078,7 @@ export class CdnConstruct extends Construct {
     // distribution would burn that scarce account-wide limit (and fails to
     // deploy once the account is at the cap). `CACHING_OPTIMIZED` honors the
     // origin `Cache-Control` (immutable assets cache up to 1y); its `minTtl: 1s`
-    // can briefly edge-cache the `no-cache` HTML, but that is SAFE across
+    // can briefly edge-cache the `max-age=0, must-revalidate` HTML, but that is SAFE across
     // deploys: every static request — HTML included — is rewritten to
     // `/builds/<buildId>/...` BEFORE the cache lookup, so the cache key is
     // build-scoped and a redeploy (new buildId) yields a new key rather than
@@ -1714,7 +1714,8 @@ export class CdnConstruct extends Construct {
     // build's hashed assets → 403. This is not Next-specific — it also hits
     // Nuxt `routeRules` swr/isr and Astro SSR (see the field doc in
     // manifest/types.ts). Pure-static deploys (no compute) serve HTML from S3
-    // with `no-cache`, so they need no invalidation and get none.
+    // with `max-age=0, must-revalidate` under the build's own key, so they
+    // need no invalidation and get none.
     //
     // Default: `['/*']` for any deploy with compute; nothing for pure-static.
     // `manifest.invalidationPaths` OVERRIDES the default — set explicit

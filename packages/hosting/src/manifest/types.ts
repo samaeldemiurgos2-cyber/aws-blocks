@@ -29,11 +29,21 @@ export type DeployManifest = {
     /** Path to static files directory */
     directory: string;
     /**
-     * Cache-Control header for non-hashed assets (HTML, public/, etc.).
-     * Defaults to `public, max-age=0, must-revalidate` so a redeploy
-     * invalidates cached HTML on next request — required to avoid PWA
+     * Cache-Control header for non-hashed assets other than HTML (public/,
+     * etc.). On the `'none'` door it defaults to
+     * `public, max-age=0, must-revalidate` so a redeploy invalidates cached
+     * files on next request — required to avoid PWA
      * "brick" scenarios where a cached `index.html` references hashed
      * URLs that the new deploy already removed.
+     *
+     * How the hosting construct applies it: it is the value for files that
+     * are not HTML, not under `immutablePaths` and not under `noCachePaths`
+     * (fonts included). HTML never receives it: `*.html` always gets its own
+     * tier, `max-age=0, must-revalidate`. When unset, the construct's
+     * default is `public, s-maxage=31536000, max-age=0, must-revalidate`
+     * (CloudFront caches under the build's own prefix, for up to a year on
+     * a static-only site and up to one day on an app with a server; the
+     * browser revalidates).
      */
     cacheControl?: string;
     /**
@@ -49,7 +59,8 @@ export type DeployManifest = {
      *
      * When omitted, all assets receive the single `cacheControl` value
      * above (back-compat with adapters that don't yet declare hashed
-     * paths).
+     * paths), except HTML, which always gets its own tier, and
+     * `noCachePaths`.
      */
     immutablePaths?: string[];
     /**
@@ -170,8 +181,9 @@ export type DeployManifest = {
    *
    * Atomic deploys write every object under a brand-new immutable
    * `builds/<buildId>/` prefix, so there is nothing stale to invalidate, and
-   * HTML served from S3 carries `no-cache` (the 3-tier Cache-Control split in
-   * hosting_construct). So a PURE-STATIC deploy (no compute) needs no
+   * HTML served from S3 carries `max-age=0, must-revalidate`, so CloudFront
+   * revalidates it on every request (the Cache-Control split in
+   * hosting_construct), and its cache key is build-scoped. So a PURE-STATIC deploy (no compute) needs no
    * invalidation — Astro/Nuxt static pages prerender to S3 and propagate on
    * the next request.
    *

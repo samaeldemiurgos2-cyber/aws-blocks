@@ -360,8 +360,9 @@ semantics, using the same matching code:
   sent as written, and the status defaults to 307. A rule the door can't
   reproduce (a destination ending in a single `*`) is left to the Nitro
   server;
-- header rules: every matching rule is added to a successful response (not to
-  a redirect or an error, as at the CloudFront edge);
+- header rules: every matching rule is added to a successful response, a
+  `304 Not Modified` included (not to a redirect or an error, as at the
+  CloudFront edge);
 - error pages: a missing static file answers with the 404 page (status 404),
   an S3 failure with the 500 page (status 500). The 404 page is the app's
   `errorPages.notFound`, else the framework build's, else, for a multi-page
@@ -504,8 +505,13 @@ when its host is in the manifest's image allowlist
 
 `'none'` publishes the build to its own public S3 website bucket, at the root.
 Each deploy prunes what the build no longer ships (a removed `*.map` stops being
-downloadable), and uploads with the same cache tiers as the other doors (hashed
-assets immutable, HTML and the rest revalidated). Pruning includes the previous
+downloadable), and uploads in three tiers: files under
+`staticAssets.immutablePaths` get `public, max-age=31536000, immutable`
+(fonts included: this door doesn't upload fonts again), HTML gets
+`no-cache, no-store, must-revalidate`, and everything else gets
+`staticAssets.cacheControl`, else `public, max-age=0, must-revalidate`.
+`staticAssets.noCachePaths` doesn't apply on this door. (The other doors'
+tiers are in [Cache-Control on uploaded files](#cache-control-on-uploaded-files).) Pruning includes the previous
 build's hashed assets: a tab opened before a deploy that then lazy-loads one of
 its chunks gets a 404 (the website's error document) and needs a reload. The page is plain HTTP and the
 API is cross-site, so an auth Building Block needs `crossDomain: true`; its
@@ -1047,6 +1053,42 @@ new HostingConstruct(stack, 'Hosting', {
   },
 });
 ```
+
+### Cache-Control on uploaded files
+
+On the CloudFront, ALB and API Gateway doors, each file uploaded from the
+static directory to the private bucket gets one of these `Cache-Control`
+values (the `'none'` door uses its own tiers, see
+[The `'none'` door](#the-none-door)):
+
+| Files | `Cache-Control` |
+|---|---|
+| Hashed assets (`staticAssets.immutablePaths`) | `public, max-age=31536000, immutable` |
+| HTML (`*.html`, prerendered pages included) | `max-age=0, must-revalidate` |
+| `staticAssets.noCachePaths` | `no-cache, no-store, must-revalidate` |
+| Fonts (`.woff2`, `.woff`, `.ttf`, `.otf`, `.eot`), hashed ones included | `staticAssets.cacheControl`, else `public, s-maxage=31536000, max-age=0, must-revalidate` |
+| Everything else | `staticAssets.cacheControl`, else `public, s-maxage=31536000, max-age=0, must-revalidate` |
+
+Fonts are uploaded again with an explicit `Content-Type`, after the other
+files, so a hashed font under `immutablePaths` (for example Next.js
+`_next/static/media/*.woff2`) gets the mutable value, not `immutable`:
+CloudFront still caches it, for up to a year on a static-only site and up to
+one day on an app with a server, and the browser revalidates it. The error
+pages the construct uploads itself (`errorPages.notFound`,
+`errorPages.serverError` and the default 404 page) carry no `Cache-Control`.
+
+HTML is revalidated on every request, and because it carries no `no-store`,
+the CloudFront door keeps a copy at the edge and answers a repeat visit's
+`If-None-Match` with `304 Not Modified`. The first request after a deploy
+still gets the new build's HTML: every HTML request resolves to the current
+build's `builds/<buildId>/` key before the cache lookup, so a deploy changes
+the cache key. These files are the build's prerendered, public pages; a
+signed-in or per-user page comes from the server, whose own `Cache-Control`
+applies. On the ALB and API Gateway doors, the asset proxy answers a repeat
+visit's `If-None-Match` for HTML with `304 Not Modified` too, and that 304
+carries the same header rules as the 200, so a browser's stored copy keeps the
+app's headers. The `'none'` door has no CDN in front of its S3 website and keeps
+`no-cache, no-store, must-revalidate` on HTML.
 
 ## Access logging
 
