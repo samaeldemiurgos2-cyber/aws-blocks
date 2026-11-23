@@ -374,15 +374,29 @@ semantics, using the same matching code:
 asset proxy, above), with one exception: a Next.js server on Lambda
 (`compute.type: 'lambda'`) behind `apiGateway` with `api: 'rest'` gzips its
 own streamed responses for clients that accept gzip, and adds
-`Vary: Accept-Encoding`. Nothing else compresses server-rendered (SSR) or API
-responses: there is no CDN in front to do it, so they reach the browser as
-the server wrote them. To send them compressed, compress in the server:
-gzip (or Brotli) the body when the request's `Accept-Encoding` allows it, and
-set `Content-Encoding` and `Vary: Accept-Encoding` on the response (for
-example in a response middleware or hook of your framework). This doesn't
-apply to Next.js on Lambda: OpenNext's streaming wrapper sets
-`Content-Encoding` itself and replaces the one your app sets, so a body the
-app compresses would be compressed twice. On the CloudFront door, CloudFront
+`Vary: Accept-Encoding`. A response without a body (a `HEAD` request, or a
+`1xx`, `204`, `205` or `304` status) is sent uncompressed, with its headers
+as the app set them. Nothing else compresses server-rendered (SSR) responses
+or the backend API: these doors have no CDN in front of the server, so
+responses reach the browser as the server wrote them. A Lambda Web Adapter
+server (Astro, SvelteKit, Nitro's `node-server` preset) can compress in the
+server: gzip (or Brotli) the body when the request's `Accept-Encoding` allows
+it, and set `Content-Encoding` and `Vary: Accept-Encoding` on the response
+(for example in a response middleware or hook of your framework). Don't
+compress in the server for the event-handler builds:
+
+- Next.js on Lambda: OpenNext's streaming wrapper sets `Content-Encoding`
+  itself and replaces the one your app sets, so a body the app compresses
+  would be compressed twice.
+- Nitro's `aws-lambda` preset (a Nuxt app on Lambda compute built without
+  the `node-server` preset): its Lambda handler returns a
+  body whose `Content-Type` is text, JSON, JavaScript or XML as a UTF-8
+  string and ignores `Content-Encoding`, so a compressed body arrives
+  corrupted and the browser can't decode it. To compress a Nuxt app's
+  responses there, build it with the `node-server` preset (a Lambda Web
+  Adapter server) and compress in the server.
+
+On the CloudFront door, CloudFront
 compresses server responses that carry a `Content-Length`, and a Next.js
 server on Lambda (`compute.type: 'lambda'`, with OpenNext's default
 `aws-lambda-streaming` wrapper) gzips its own streamed responses for viewers
@@ -621,9 +635,10 @@ it is not an in-place update.
   alarms; the ALB door's (and the router's) own alarms are on unless
   `monitoring: { enabled: false }`, and its access logs are off unless you set
   them.
-- **CloudFront → ALB or API Gateway** stops compressing server-rendered and
-  API responses (static files are still gzipped by the asset proxy, and a
-  Next.js server on Lambda behind `api: 'rest'` still gzips its own); see
+- **CloudFront → ALB or API Gateway** stops compressing server-rendered
+  responses, including the framework's own API routes (static files are
+  still gzipped by the asset proxy, and a Next.js server on Lambda behind
+  `api: 'rest'` still gzips its own); see
   "Compression" in [the ALB and API Gateway doors](#the-alb-and-api-gateway-doors-rules-and-limits).
 - **A custom domain moving between doors** (for example the CloudFront door's
   `domain` to an API Gateway or ALB door) creates Route 53 records of the same
@@ -1193,7 +1208,10 @@ are cached as its `Cache-Control` says. The guard sends
   as keyed too: the CloudFront door's key holds them as request headers, and
   the stacked door's holds the query string, whose `_rsc` parameter Next.js
   derives from them and `Next-Url`. On the CloudFront door `cacheKeyHeaders`
-  are keyed as well. `Vary: Cookie` alone never leads to a rewrite: cookies
+  are keyed as well, and `Next-Url` is not: Next.js adds `Vary: Next-Url` to
+  App Router pages whose path an intercepting route can match (for example
+  `app/@modal/(.)photos/[id]/page.tsx`), so on that door those pages are not
+  edge-cached unless `next-url` is in `cacheKeyHeaders`. `Vary: Cookie` alone never leads to a rewrite: cookies
   follow the cookie rule above (and are all in the key behind the stacked
   door). The response keeps its `Vary`
   header for the browser, and the server logs once per header name why the

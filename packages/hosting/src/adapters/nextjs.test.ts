@@ -1248,7 +1248,11 @@ void describe('patchStreamingWrapperForApiGateway — response compression', () 
    * prelude carries plus the decoded body. The app handler writes the HTML in
    * two chunks so the test also covers a streamed (multi-write) body.
    */
-  const invoke = async (acceptEncoding: string, appHeaders: Record<string, string> = {}) => {
+  const invoke = async (
+    acceptEncoding: string,
+    appHeaders: Record<string, string> = {},
+    { event = {}, statusCode = 200, body = true }: { event?: Record<string, unknown>; statusCode?: number; body?: boolean } = {},
+  ) => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hosting-patch-gzip-'));
     try {
       const dir = path.join(tmp, 'server-functions', 'default');
@@ -1272,16 +1276,21 @@ void describe('patchStreamingWrapperForApiGateway — response compression', () 
           handler: (
             app: (
               event: unknown,
-              opts: { streamCreator: { writeHeaders: (p: { headers: Record<string, string> }) => NodeJS.WritableStream } },
+              opts: {
+                streamCreator: {
+                  writeHeaders: (p: { statusCode: number; headers: Record<string, string> }) => NodeJS.WritableStream;
+                };
+              },
             ) => Promise<void>,
           ) => (event: unknown) => Promise<void>;
         };
         const lambda = mod.handler(async (_event, { streamCreator }) => {
-          const body = streamCreator.writeHeaders({ headers: { 'content-type': 'text/html', ...appHeaders } });
-          body.write(HTML.slice(0, 1000));
-          body.end(HTML.slice(1000));
+          const stream = streamCreator.writeHeaders({ statusCode, headers: { 'content-type': 'text/html', ...appHeaders } });
+          if (!body) return void stream.end();
+          stream.write(HTML.slice(0, 1000));
+          stream.end(HTML.slice(1000));
         });
-        await lambda({ headers: { 'accept-encoding': acceptEncoding } });
+        await lambda({ ...event, headers: { 'accept-encoding': acceptEncoding } });
         await once(responseStream, 'end');
       } finally {
         delete g.awslambda;
@@ -1293,13 +1302,13 @@ void describe('patchStreamingWrapperForApiGateway — response compression', () 
       };
       const payload = raw.subarray(preludeEnd + 8);
       const encoding = prelude.headers['content-encoding'];
-      const body = encoding === 'gzip' ? zlib.gunzipSync(payload).toString('utf-8') : payload.toString('utf-8');
+      const text = encoding === 'gzip' ? zlib.gunzipSync(payload).toString('utf-8') : payload.toString('utf-8');
       return {
         encoding,
         contentLength: prelude.headers['content-length'],
         vary: prelude.headers.vary,
         payloadBytes: payload.length,
-        body,
+        body: text,
       };
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
@@ -1370,6 +1379,42 @@ void describe('patchStreamingWrapperForApiGateway — response compression', () 
     assert.strictEqual(kept.vary, 'rsc, accept-encoding');
   });
 
+  // The wrapper picks the gzip stream from Accept-Encoding before the status
+  // is known, and ending an unwritten gzip stream still emits its 20-byte
+  // header and trailer. A response without a body must stay identity.
+  void it('sends a 304, 204 or 1xx response without a body uncompressed, its headers unchanged', async () => {
+    for (const statusCode of [304, 204, 205, 103]) {
+      const res = await invoke('br,gzip', { etag: '"abc"' }, { statusCode, body: false });
+      assert.strictEqual(res.encoding, 'identity', String(statusCode));
+      assert.strictEqual(res.payloadBytes, 0, String(statusCode));
+    }
+  });
+
+  void it('sends a HEAD response uncompressed and keeps its content-length (REST, HTTP API and Function URL events)', async () => {
+    const events = [
+      { httpMethod: 'HEAD' },
+      { requestContext: { http: { method: 'HEAD' } } },
+      { requestContext: { http: { method: 'head' } } },
+    ];
+    for (const event of events) {
+      const res = await invoke('gzip', { 'content-length': String(HTML.length) }, { event, body: false });
+      assert.strictEqual(res.encoding, 'identity', JSON.stringify(event));
+      assert.strictEqual(res.contentLength, String(HTML.length), JSON.stringify(event));
+      assert.strictEqual(res.payloadBytes, 0, JSON.stringify(event));
+    }
+  });
+
+  void it('still gzips a GET 200 and a 404 that carry a body', async () => {
+    for (const [event, statusCode] of [
+      [{ httpMethod: 'GET' }, 200],
+      [{ requestContext: { http: { method: 'GET' } } }, 404],
+    ] as const) {
+      const res = await invoke('gzip', {}, { event, statusCode });
+      assert.strictEqual(res.encoding, 'gzip');
+      assert.strictEqual(res.body, HTML);
+    }
+  });
+
   void it('patches the minified 4.x wrapper shape', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hosting-patch-min-'));
     try {
@@ -1379,14 +1424,16 @@ void describe('patchStreamingWrapperForApiGateway — response compression', () 
       // Excerpt of the @opennextjs/aws 4.1.x minified wrapper.
       fs.writeFileSync(
         bundle,
-        'i.includes("br")?(a="br",u=$i.createBrotliCompress({}),u.pipe(o)):i.includes("gzip")?(a="gzip",u=$i.createGzip({flush:$i.constants.Z_SYNC_FLUSH}),u.pipe(o)):i.includes("deflate")?(a="deflate",u=$i.createDeflate({}),u.pipe(o)):(a="identity",u=o);let m={writeHeaders:C=>{o.setContentType("application/vnd.awslambda.http-integration-response"),C.headers["content-encoding"]=a;let b=JSON.stringify(C);return o.write(b),o.write(new Uint8Array(8)),u??o}};',
+        'awslambda.streamifyResponse(async(r,o,n)=>{let i=r.headers["accept-encoding"]??"",a,u;' +
+          'i.includes("br")?(a="br",u=$i.createBrotliCompress({}),u.pipe(o)):i.includes("gzip")?(a="gzip",u=$i.createGzip({flush:$i.constants.Z_SYNC_FLUSH}),u.pipe(o)):i.includes("deflate")?(a="deflate",u=$i.createDeflate({}),u.pipe(o)):(a="identity",u=o);let m={writeHeaders:C=>{o.setContentType("application/vnd.awslambda.http-integration-response"),C.headers["content-encoding"]=a;let b=JSON.stringify(C);return o.write(b),o.write(new Uint8Array(8)),u??o}};});',
       );
       patchStreamingWrapperForApiGateway(tmp);
       const post = fs.readFileSync(bundle, 'utf-8');
       assert.match(post, /\/\*hosting:accepts-gzip\*\/.*\(i\)\?\(a="gzip"/);
       assert.match(post, /a!=="identity"&&\(delete C\.headers\["content-length"\]/);
+      assert.match(post, /\/\*hosting:bodyless\*\/.*\(C\.statusCode,r\)&&a!=="identity"&&\(u!==o&&u\?\.unpipe\?\.\(o\),u=o,a="identity"\)/);
       // Still valid JavaScript after the rewrite.
-      assert.doesNotThrow(() => new Function('i', 'o', '$i', post));
+      assert.doesNotThrow(() => new Function('awslambda', '$i', post));
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }

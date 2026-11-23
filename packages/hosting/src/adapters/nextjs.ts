@@ -1745,6 +1745,17 @@ const VARY_ACCEPT_ENCODING_FN =
   ':/(^|,)\\s*(\\*|accept-encoding)\\s*(,|$)/i.test(String(v))?v:String(v)+", Accept-Encoding"})';
 
 /**
+ * Expression that is true for a response that carries no body: the answer to a
+ * `HEAD` request, or a `1xx`, `204`, `205` or `304` status. Reads the method
+ * from the raw Lambda event (REST API `httpMethod`, or the HTTP API and
+ * Function URL `requestContext.http.method`). Called with the prelude's status
+ * code and the event as an arrow function.
+ */
+const BODYLESS_RESPONSE_FN =
+  '/*hosting:bodyless*/((c,e)=>{c=Number(c);let m=String(e?.httpMethod??e?.requestContext?.http?.method??"").toUpperCase();' +
+  'return m==="HEAD"||(c>=100&&c<200)||c===204||c===205||c===304})';
+
+/**
  * Patch OpenNext's bundled `aws-lambda-streaming` wrapper for API Gateway
  * STREAM framing. Three changes to <projectDir>/.open-next/server-functions/
  * default/index.mjs:
@@ -1768,6 +1779,11 @@ const VARY_ACCEPT_ENCODING_FN =
  *      add `Accept-Encoding` to every response's `vary`, so a shared cache in
  *      front of the API Gateway REST door keys on it too.
  *   4. Make the gzip check honour q-values (`gzip;q=0` refuses gzip).
+ *   5. Keep a response that carries no body (`HEAD`, `1xx`, `204`, `205`,
+ *      `304`) on the identity stream with its headers as the app set them.
+ *      The wrapper picks the gzip stream from `Accept-Encoding` before the
+ *      status is known, and ending an unwritten gzip stream still emits a
+ *      20-byte gzip header and trailer.
  * Idempotent.
  * @internal
  */
@@ -1837,11 +1853,25 @@ export const patchStreamingWrapperForApiGateway = (
     if (patches > 0 && !src.includes(DROP_CONTENT_LENGTH_MARKER)) {
       const encodingHeaderRe =
         /([A-Za-z_$][\w$]*)\.headers\["content-encoding"\]\s*=\s*([A-Za-z_$][\w$]*)(?=\s*[;,}])/g;
-      if (encodingHeaderRe.test(src)) {
+      // A body-less response must leave on the identity stream, so the patch
+      // needs the handler's event and response stream
+      // (`streamifyResponse(async (event, responseStream, …) =>`) and the
+      // gzip stream its gzip branch pipes into it
+      // (`.includes("gzip")) { contentEncoding = "gzip"; compressed = zlib.createGzip(`).
+      const handlerArgs =
+        /streamifyResponse\(\s*(?:[A-Za-z_$][\w$.]*\s*,\s*)?async\s*\(\s*([A-Za-z_$][\w$]*)\s*,\s*([A-Za-z_$][\w$]*)/.exec(src);
+      const gzipStream =
+        /\.includes\("gzip"\)\s*\)?\s*[?{]\s*\(?\s*(?:[A-Za-z_$][\w$]*\s*=\s*"gzip"\s*[,;]\s*)?([A-Za-z_$][\w$]*)\s*=\s*(?:[A-Za-z_$][\w$]*\.)?createGzip\(/.exec(
+          src,
+        );
+      if (encodingHeaderRe.test(src) && handlerArgs && gzipStream) {
+        const [, event, responseStream] = handlerArgs;
+        const compressed = gzipStream[1];
         src = src.replace(
           encodingHeaderRe,
           (_m, prelude: string, encoding: string) =>
-            `(${DROP_CONTENT_LENGTH_MARKER}${encoding}!=="identity"&&(delete ${prelude}.headers["content-length"],delete ${prelude}.headers["Content-Length"]),${VARY_ACCEPT_ENCODING_FN}(${prelude}.headers),${prelude}.headers["content-encoding"]=${encoding})`,
+            `(${BODYLESS_RESPONSE_FN}(${prelude}.statusCode,${event})&&${encoding}!=="identity"&&(${compressed}!==${responseStream}&&${compressed}?.unpipe?.(${responseStream}),${compressed}=${responseStream},${encoding}="identity"),` +
+            `${DROP_CONTENT_LENGTH_MARKER}${encoding}!=="identity"&&(delete ${prelude}.headers["content-length"],delete ${prelude}.headers["Content-Length"]),${VARY_ACCEPT_ENCODING_FN}(${prelude}.headers),${prelude}.headers["content-encoding"]=${encoding})`,
         );
         patches++;
         // The upstream gzip check is a substring test, which reads
@@ -1859,7 +1889,7 @@ export const patchStreamingWrapperForApiGateway = (
         if (process.env.HOSTING_LENIENT_PATCHES !== '1') {
           throw new HostingError('UpstreamPatchPatternChangedError', {
             message:
-              `Streaming-wrapper patch could not find the content-encoding header assignment in ${bundle}. ` +
+              `Streaming-wrapper patch could not find the content-encoding header assignment, the handler's event and response stream, or the gzip stream in ${bundle}. ` +
               'OpenNext likely changed its bundled aws-lambda-streaming wrapper.',
             resolution:
               'File an issue with the OpenNext version and the regex name (`patchStreamingWrapperForApiGateway`). ' +
@@ -1867,7 +1897,7 @@ export const patchStreamingWrapperForApiGateway = (
           });
         }
         process.stderr.write(
-          `⚠️  Streaming-wrapper patch could not find the content-encoding header assignment in ${bundle}; ` +
+          `⚠️  Streaming-wrapper patch could not find the content-encoding header assignment, the handler's event and response stream, or the gzip stream in ${bundle}; ` +
             'server responses are sent uncompressed. Continuing because HOSTING_LENIENT_PATCHES=1 is set.\n',
         );
         patches++;

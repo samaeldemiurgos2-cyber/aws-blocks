@@ -637,12 +637,18 @@ function installHttpServerGuard() {
     try {
       const req = this.req;
       if (req && req.headers && !this.headersSent) {
-        // writeHead(status, [statusMessage], [headers])
-        const index = typeof args[0] === 'string' ? 1 : 0;
+        // writeHead(status, [statusMessage], [headers]). As in Node, the
+        // headers are the third argument unless the second is a status message
+        // and the third is missing (writeHead(status, undefined, headers) and
+        // writeHead(status, null, headers) send the third).
+        const index = typeof args[0] === 'string' || args[1] != null ? 1 : 0;
         let extra = args[index];
+        // An array of [name, value] tuples, which Node accepts only while no
+        // header has been set.
+        const tuples = Array.isArray(extra) && extra.length > 0 && Array.isArray(extra[0]);
         const pairs = [];
         if (Array.isArray(extra)) {
-          if (extra.length && Array.isArray(extra[0])) for (const [k, v] of extra) pairs.push([String(k), v]);
+          if (tuples) for (const [k, v] of extra) pairs.push([String(k), v]);
           else for (let i = 0; i + 1 < extra.length; i += 2) pairs.push([String(extra[i]), extra[i + 1]]);
         } else if (extra && typeof extra === 'object') {
           for (const k of Object.keys(extra)) pairs.push([k, extra[k]]);
@@ -672,11 +678,12 @@ function installHttpServerGuard() {
         if (next != null) {
           this.setHeader('cache-control', next);
           // Headers passed to writeHead are merged over setHeader values, so
-          // replace any Cache-Control among them too.
-          if (argCacheControl.length) {
+          // replace any Cache-Control among them too. Once a header is set,
+          // Node rejects an array of tuples, so pass those on as a flat array.
+          if (argCacheControl.length || tuples) {
             const kept = pairs.filter(([k]) => k.toLowerCase() !== 'cache-control');
             if (Array.isArray(extra)) {
-              extra = extra.length && Array.isArray(extra[0]) ? kept : kept.flat();
+              extra = kept.flat();
             } else {
               extra = Object.fromEntries(kept);
             }

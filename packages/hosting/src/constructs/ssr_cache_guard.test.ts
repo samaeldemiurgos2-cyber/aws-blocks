@@ -310,6 +310,11 @@ void describe('guardCacheControl: Vary', () => {
     const keyedOnly = guard.guardResult({ statusCode: 200, headers: { 'cache-control': 's-maxage=60', vary: 'Accept-Encoding' } }, anon);
     assert.deepEqual(keyedOnly.headers, { 'cache-control': 's-maxage=60', vary: 'Accept-Encoding' });
   });
+
+  void it('reads Vary from the single-value headers of a buffered result', () => {
+    const result = guard.guardResult({ statusCode: 200, headers: { 'cache-control': 's-maxage=60', vary: 'Accept-Language' } }, anon);
+    assert.deepEqual(result.headers, { 'cache-control': PRIVATE, vary: 'Accept-Language' });
+  });
 });
 
 void describe('requestInfoFromEvent / guardResult', () => {
@@ -663,14 +668,14 @@ export const handler = run;
   });
 
   /** Wrap a streaming handler module (its source) and return the wrapper's handler. */
-  const streamingWrapper = async (code: string) => {
+  const streamingWrapper = async (code: string, config: Parameters<typeof generateSsrCacheGuardModule>[0] = {}) => {
     const dir = path.join(tmpRoot, `h${counter++}`);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(
       path.join(dir, 'index.mjs'),
       `const run = async (event, stream) => {\n${code}\n};\nrun[Symbol.for('aws.lambda.runtime.handler.streaming')] = 'response';\nexport const handler = run;\n`,
     );
-    withSsrCacheGuard({ type: 'handler', placement: 'regional', bundle: dir, handler: 'index.handler' }, {});
+    withSsrCacheGuard({ type: 'handler', placement: 'regional', bundle: dir, handler: 'index.handler' }, config);
     const mod = (await import(pathToFileURL(path.join(dir, SSR_CACHE_GUARD_HANDLER_FILE)).href)) as {
       handler: (event: unknown, stream: unknown) => Promise<void>;
     };
@@ -705,6 +710,25 @@ export const handler = run;
     return { stream, calls, bytes, prelude };
   };
   const PRELUDE_CT = "stream.setContentType('application/vnd.awslambda.http-integration-response');";
+
+  void it('reads Vary from a streaming prelude behind the CloudFront door', async () => {
+    const handler = await streamingWrapper(
+      `${PRELUDE_CT}
+  stream.write(JSON.stringify({ statusCode: 200, headers: { 'cache-control': 's-maxage=60', vary: 'Accept-Language' }, cookies: [] }));
+  stream.write(new Uint8Array(8));
+  stream.end('body');`,
+      CLOUDFRONT_DOOR,
+    );
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      const { stream, prelude } = recordingStream();
+      await handler({ headers: {} }, stream);
+      assert.deepEqual(prelude().headers, { 'cache-control': PRIVATE, vary: 'Accept-Language' });
+    } finally {
+      console.warn = warn;
+    }
+  });
 
   void it('guards a prelude written through end() as the only call', async () => {
     const handler = await streamingWrapper(`${PRELUDE_CT}
@@ -1020,6 +1044,30 @@ void describe('Node HTTP server (writeHead)', () => {
       } else if (req.url === '/vary-keyed') {
         res.writeHead(200, { 'cache-control': 'public, s-maxage=20', vary: 'RSC, Accept-Encoding' });
         res.end('k');
+      } else if (req.url === '/write-head-undefined') {
+        // Node reads the headers from the third argument when the second is
+        // not a status message.
+        res.writeHead(200, undefined, { 'cache-control': 'public, s-maxage=20', vary: 'X-Undefined-Reason' });
+        res.end('n');
+      } else if (req.url === '/write-head-null') {
+        res.writeHead(200, null as unknown as string, { 'cache-control': 'public, s-maxage=20', 'x-null': '1' });
+        res.end('o');
+      } else if (req.url === '/write-head-tuples') {
+        // An array of [name, value] tuples, which Node accepts when no header
+        // was set before.
+        res.writeHead(200, [
+          ['cache-control', 'public, s-maxage=20'],
+          ['vary', 'X-Tuples'],
+          ['content-type', 'text/plain'],
+        ] as unknown as http.OutgoingHttpHeader[]);
+        res.end('p');
+      } else if (req.url === '/write-head-tuples-no-cc') {
+        res.writeHead(200, 'OK', [
+          ['content-type', 'text/plain'],
+          ['set-cookie', 'v=1; Path=/'],
+          ['x-tuple', 'a'],
+        ] as unknown as http.OutgoingHttpHeader[]);
+        res.end('q');
       } else if (req.url === '/set-cookie') {
         res.setHeader('Cache-Control', 'public, s-maxage=300');
         res.setHeader('Set-Cookie', 'v=1; Path=/');
@@ -1114,6 +1162,43 @@ void describe('Node HTTP server (writeHead)', () => {
       console.warn = warn;
     }
     assert.ok(!warnings.some((w) => w.includes('x-overridden')), warnings.join('\n'));
+  });
+  void it('reads the headers of writeHead(status, undefined | null, headers)', async () => {
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      const undef = await get('/write-head-undefined');
+      assert.equal(undef.headers.get('cache-control'), PRIVATE);
+      assert.equal(undef.headers.get('vary'), 'X-Undefined-Reason');
+      const nul = await get('/write-head-null', { cookie: 'theme=dark' });
+      assert.equal(nul.headers.get('cache-control'), PRIVATE);
+      assert.equal(nul.headers.get('x-null'), '1');
+      assert.equal((await get('/write-head-null')).headers.get('cache-control'), 'public, s-maxage=20');
+    } finally {
+      console.warn = warn;
+    }
+  });
+
+  void it('rewrites a writeHead array of [name, value] tuples without breaking the response', async () => {
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      const res = await get('/write-head-tuples');
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get('cache-control'), PRIVATE);
+      assert.equal(res.headers.get('vary'), 'X-Tuples');
+      assert.equal(res.headers.get('content-type'), 'text/plain');
+      assert.equal(await res.text(), 'p');
+      // The guard sets Cache-Control on a response whose tuples carry none.
+      const noCc = await get('/write-head-tuples-no-cc');
+      assert.equal(noCc.status, 200);
+      assert.equal(noCc.headers.get('cache-control'), PRIVATE);
+      assert.equal(noCc.headers.get('set-cookie'), 'v=1; Path=/');
+      assert.equal(noCc.headers.get('x-tuple'), 'a');
+      assert.equal(await noCc.text(), 'q');
+    } finally {
+      console.warn = warn;
+    }
   });
 });
 
