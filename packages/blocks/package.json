@@ -22,6 +22,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
+    "cdk-blocks": "./dist/cli/bin.js",
     "blocks-generate-client": "./dist/generate-client-cli.js",
     "blocks-vendorize": "./dist/vendorize.js"
   },

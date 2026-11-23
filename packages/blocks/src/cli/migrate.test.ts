@@ -42,7 +42,11 @@ const FIXTURES = JSON.parse(
 	readFileSync(fileURLToPath(new URL('../../test-fixtures/migrate-apps.json', import.meta.url)), 'utf-8'),
 ) as Record<string, FixtureApp>;
 
-const task = (command: string): string => `node --input-type=module -e "import 'aws-cdk-blocks/run'" -- ${command}`;
+/** A task script as migrate writes it. */
+const task = (command: string): string => `cdk-blocks ${command}`;
+/** The 1.0.0 form of a task: what those templates scripted, and what a hint gives for a shell. */
+const shellTask = (command: string): string =>
+	`node --input-type=module -e "import 'aws-cdk-blocks/run'" -- ${command}`;
 
 const TEMPLATES_DIR = fileURLToPath(new URL('../../../create-blocks-app/templates/', import.meta.url));
 
@@ -528,7 +532,7 @@ describe('cdk-blocks migrate references', () => {
 			error: {
 				message:
 					'git does not track this app (a parent repository may ignore its directory), so its changes could not be undone with git.',
-				hint: `"${task('migrate --force')}" to migrate anyway`,
+				hint: `"${shellTask('migrate --force')}" to migrate anyway`,
 			},
 		});
 		assert.deepStrictEqual(snapshot(root), before);
@@ -685,16 +689,46 @@ describe('cdk-blocks migrate', () => {
 		}
 	});
 
-	it('migrates exact CLI aliases and only fills missing user tasks', () => {
+	it('keeps cdk-blocks task scripts and only fills missing user tasks', () => {
 		const root = writeApp('cli-alias-app');
 		const plan = planMigration(root, null);
 		assert.deepStrictEqual(plan.result.scriptsRewritten.db, { from: null, to: task('db') });
+		assert.strictEqual(plan.result.scriptsRewritten.dev, undefined, 'cdk-blocks dev is not reported');
+		assert.strictEqual(plan.result.scriptsRewritten.prebuild, undefined);
 		applyMigration(root, plan);
 		const { scripts } = readPkg(root);
-		assert.strictEqual(scripts.dev, task('dev'));
-		assert.strictEqual(scripts.prebuild, task('generate client'));
+		assert.strictEqual(scripts.dev, 'cdk-blocks dev');
+		assert.strictEqual(scripts.prebuild, 'cdk-blocks generate client');
 		assert.strictEqual(scripts.docs, 'my-custom-docs');
 		assert.strictEqual(scripts.custom, 'cdk-blocks deploy && echo done');
+	});
+
+	it('shortens the exact 1.0.0 task scripts and keeps the ones with other arguments', async () => {
+		const root = writeApp('default@d79a0bda');
+		const current = JSON.parse(readFileSync(join(TEMPLATES_DIR, 'default', 'package.json'), 'utf-8'));
+		const custom = {
+			'dev:wide': shellTask('dev --port 4000'),
+			'deploy:loud': `${shellTask('deploy')} && echo done`,
+		};
+		const pkg = readPkg(root);
+		pkg.scripts = {
+			...Object.fromEntries(
+				Object.entries(current.scripts as Record<string, string>).map(([name, value]) => [
+					name,
+					value.startsWith(task('')) ? shellTask(value.slice(task('').length)) : value,
+				]),
+			),
+			...custom,
+		};
+		writeFileSync(join(root, 'package.json'), JSON.stringify(pkg, null, 2));
+		const run = await runCli(['migrate', '--force', '--output', 'json'], { cwd: root });
+		assert.strictEqual(run.code, 0, run.stderr);
+		const result = JSON.parse(run.stdout);
+		assert.deepStrictEqual(result.scriptsRewritten.dev, { from: shellTask('dev'), to: 'cdk-blocks dev' });
+		assert.deepStrictEqual(result.scriptsRewritten.help, { from: shellTask('--help'), to: 'cdk-blocks --help' });
+		assert.strictEqual(result.scriptsRewritten['dev:wide'], undefined);
+		assert.strictEqual(result.scriptsRewritten['deploy:loud'], undefined);
+		assert.deepStrictEqual(readPkg(root).scripts, { ...current.scripts, ...custom });
 	});
 
 	it('renames the scripts that a prerelease build scaffolded with the blocks command', async () => {
@@ -767,7 +801,7 @@ describe('cdk-blocks migrate', () => {
 		]);
 		assert.match(
 			result.kept.find((k: { file: string }) => k.file === 'package.json#scripts.deploy').reason,
-			/^"node .* -- deploy" needs "stackId" in \.cdk-blocks\/config\.json, but \.cdk-blocks\/config\.json has no string "stackId": create/,
+			/^"cdk-blocks deploy" needs "stackId" in \.cdk-blocks\/config\.json, but \.cdk-blocks\/config\.json has no string "stackId": create/,
 		);
 		assert.strictEqual(result.scriptsRewritten.sandbox.to, task('sandbox'), 'the other scripts migrate');
 		assert.deepStrictEqual(scriptsDir(root), ['deploy.ts', 'destroy.ts']);
@@ -1020,7 +1054,7 @@ describe('cdk-blocks migrate', () => {
 		assert.strictEqual(run.code, 0, run.stderr);
 		assert.deepStrictEqual(snapshot(root), before);
 		assert.match(run.stdout, /^Dry run; nothing was written/);
-		assert.match(run.stdout, /rewrite script "deploy": tsx aws-blocks\/scripts\/deploy\.ts -> node .* -- deploy/);
+		assert.match(run.stdout, /rewrite script "deploy": tsx aws-blocks\/scripts\/deploy\.ts -> cdk-blocks deploy$/m);
 		assert.match(run.stdout, /delete aws-blocks\/scripts\/server\.ts/);
 	});
 
@@ -1064,7 +1098,7 @@ describe('cdk-blocks migrate', () => {
 		assert.deepStrictEqual(JSON.parse(json.stdout), {
 			error: {
 				message: 'the git working tree has uncommitted changes; commit or stash them first.',
-				hint: `git stash, or "${task('migrate --force')}" to migrate anyway`,
+				hint: `git stash, or "${shellTask('migrate --force')}" to migrate anyway`,
 			},
 		});
 		assert.match(json.stderr, /^Error: the git working tree has uncommitted changes/);
@@ -1115,7 +1149,7 @@ describe('cdk-blocks migrate', () => {
 			error: {
 				message:
 					'this app is not in a git work tree (or git is not installed), so its changes could not be undone with git.',
-				hint: `"${task('migrate --dry-run')}" to see the plan, then "${task('migrate --force')}" to migrate without git`,
+				hint: `"${shellTask('migrate --dry-run')}" to see the plan, then "${shellTask('migrate --force')}" to migrate without git`,
 			},
 		});
 		assert.deepStrictEqual(snapshot(root), before);
@@ -1263,7 +1297,7 @@ describe('cdk-blocks migrate', () => {
 			[
 				'Error: package.json was rewritten, but 10 wrappers could not be deleted.',
 				...planned.removed.map((file: string) => `  ${file}: EACCES`),
-				`Try: fix the permissions, then "${task('migrate --force')}" to delete them`,
+				`Try: fix the permissions, then "${shellTask('migrate --force')}" to delete them`,
 				'',
 			].join('\n'),
 		);
@@ -1278,7 +1312,7 @@ describe('cdk-blocks migrate', () => {
 		assert.deepStrictEqual(JSON.parse(json.stdout), {
 			error: {
 				message: '10 wrappers could not be deleted.',
-				hint: `fix the permissions, then "${task('migrate --force')}" to delete them`,
+				hint: `fix the permissions, then "${shellTask('migrate --force')}" to delete them`,
 			},
 		});
 

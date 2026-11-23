@@ -133,6 +133,6 @@ Node: the package task runner, and your CDK entry file.
 
 | Entry | What it is |
 |---|---|
-| `aws-cdk-blocks/run` | the side-effect entry point invoked by app package scripts |
+| `aws-cdk-blocks/run` | the side-effect `node -e` task entry of 1.0.0 scripts; package scripts call the `cdk-blocks` bin |
 | `aws-cdk-blocks/vendorize` | the `npm run vendorize` implementation |
 | `aws-cdk-blocks/docs/*` | these docs |

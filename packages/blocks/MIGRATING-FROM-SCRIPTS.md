@@ -1,6 +1,6 @@
-# Migrating an app from `cdk-blocks` and `aws-blocks/scripts`
+# Migrating an app from `aws-blocks/scripts` and earlier task scripts
 
-What `npm run migrate` rewrites, keeps and deletes in an app whose scripts call the `cdk-blocks` executable or run generated `aws-blocks/scripts/*.ts` wrappers, when it refuses to run, and what it prints. How to run it, its exit codes and the two commands that behave differently afterwards are in the [`aws-cdk-blocks` README](./README.md#migrating-an-existing-app).
+What `npm run migrate` rewrites, keeps and deletes in an app whose scripts run generated `aws-blocks/scripts/*.ts` wrappers, call the prerelease `blocks` command, or use the 1.0.0 form `node --input-type=module -e "import 'aws-cdk-blocks/run'" -- <task>`, when it refuses to run, and what it prints. How to run it, its exit codes and the two commands that behave differently afterwards are in the [`aws-cdk-blocks` README](./README.md#migrating-an-existing-app).
 
 ## Generated and customized wrappers
 
@@ -12,7 +12,9 @@ What `npm run migrate` rewrites, keeps and deletes in an app whose scripts call 
 
 ## Scripts
 
-- Migrate rewrites recognized generated task scripts to load `aws-cdk-blocks/run` and adds missing task scripts.
+- Migrate rewrites recognized generated task scripts to call the `cdk-blocks` bin of the installed `aws-cdk-blocks` (`"dev": "cdk-blocks dev"`) and adds missing task scripts in that form.
+- A 1.0.0 script (`node --input-type=module -e "import 'aws-cdk-blocks/run'" -- dev`) or a prerelease `blocks dev` script becomes `cdk-blocks dev` only when it is exactly a task that a template generated. A 1.0.0 script with other arguments stays as it is and keeps working.
+- A script that already calls `cdk-blocks` stays as it is.
 - For the older TypeScript wrappers, it rewrites a script only when both the command and the wrapper match a generated version.
 - It does not overwrite custom scripts to make room for new tasks.
 

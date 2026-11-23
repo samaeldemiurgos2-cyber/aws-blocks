@@ -457,6 +457,15 @@ async function addBlocksWorkspace(targetDir: string, options: {
 
   // Add dependencies
   if (!pkg.dependencies) pkg.dependencies = {};
+  // The `aws-cdk-blocks` range the project already declares, when it is not the one this CLI writes.
+  // A devDependencies range wins, as it does in npm's resolution of the root. From the monorepo the
+  // dependency becomes a `file:` path below, so there is nothing to report.
+  const wantedBlocks = deps['aws-cdk-blocks'];
+  const declaredBlocks: unknown = { ...pkg.dependencies, ...pkg.devDependencies }['aws-cdk-blocks'];
+  const keptBlocks =
+    !localMonorepo && wantedBlocks && typeof declaredBlocks === 'string' && declaredBlocks !== wantedBlocks
+      ? declaredBlocks
+      : undefined;
   for (const [dep, ver] of Object.entries(deps)) {
     if (!pkg.dependencies[dep]) pkg.dependencies[dep] = ver;
   }
@@ -507,6 +516,11 @@ async function addBlocksWorkspace(targetDir: string, options: {
 
   await writeFile(pkgPath, JSON.stringify(pkg, null, 2));
   console.log('  ✓ Modified package.json');
+  if (keptBlocks) {
+    console.log(`  ⚠ package.json already depends on aws-cdk-blocks@${keptBlocks}, and that range is kept.`);
+    console.log(`    The added scripts are for aws-cdk-blocks@${wantedBlocks}: they call its cdk-blocks bin.`);
+    console.log(`    If "npm run <task>" does not find cdk-blocks, change the dependency to ${wantedBlocks} and install again.`);
+  }
 
   // Modify .gitignore
   const gitignorePath = join(targetDir, '.gitignore');
@@ -563,7 +577,7 @@ async function addBlocksWorkspace(targetDir: string, options: {
 /** Reuse the selected template's CDK Blocks tasks, not its frontend or lifecycle scripts. */
 function templateTasks(scripts: Record<string, string>): Record<string, string> {
   return Object.fromEntries(Object.entries(scripts).filter(([name, command]) =>
-    name !== 'prebuild' && command.startsWith(`node --input-type=module -e "import 'aws-cdk-blocks/run'" -- `),
+    name !== 'prebuild' && command.startsWith('cdk-blocks '),
   ));
 }
 

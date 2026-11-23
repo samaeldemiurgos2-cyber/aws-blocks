@@ -68,7 +68,7 @@ const APP_FACING: Record<string, { readonly runs: string; readonly purpose: stri
 
 /** Export-map entries an app does not import from. */
 const NOT_APP_FACING: Record<string, string> = {
-	'./run': 'the side-effect entry point invoked by app package scripts',
+	'./run': 'the side-effect `node -e` task entry of 1.0.0 scripts; package scripts call the `cdk-blocks` bin',
 	'./vendorize': 'the `npm run vendorize` implementation',
 	'./docs/*': 'these docs',
 };

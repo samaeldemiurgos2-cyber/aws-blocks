@@ -308,7 +308,7 @@ Before they deploy, `npm run sandbox` and `npm run deploy` print the deployment 
 
 ## Package scripts
 
-Run tasks from your app with its package manager. `npm run` lists the scripts in its `package.json`; `npm run help` describes the CDK Blocks tasks. Each script loads the runner, `aws-cdk-blocks/run`, from the app's installed `aws-cdk-blocks`: there is no separate CLI to install. Do not import `/run` from application code. For an older app, see [Migrating an existing app](#migrating-an-existing-app).
+Run tasks from your app with its package manager. `npm run` lists the scripts in its `package.json`; `npm run help` describes the AWS CDK Blocks tasks. Each script calls the `cdk-blocks` bin that the app's installed `aws-cdk-blocks` provides (`"dev": "cdk-blocks dev"`): there is no separate CLI to install. The bin is on `PATH` only inside package scripts, so run `npm run <task>`. Scripts in the 1.0.0 form, `node --input-type=module -e "import 'aws-cdk-blocks/run'" -- <task>`, keep working, and `npm run migrate` shortens them. An install without bin links (`npm install --no-bin-links`) has no `cdk-blocks` bin, so keep the 1.0.0 form there. Do not import `/run` from application code. For an older app, see [Migrating an existing app](#migrating-an-existing-app).
 
 With npm, put positional arguments directly after the task name. Use `--` before options that belong to the task, so npm does not consume them. For a pipe, redirect or command substitution, add `-s` to suppress npm's script banner:
 
@@ -483,11 +483,11 @@ The lifecycle commands run the app's TypeScript with `tsx`:
 
 ### Migrating an existing app
 
-The `cdk-blocks` executable is not installed, and a global install or an `npx` invocation is not a substitute. For an app whose scripts call it or run generated `aws-blocks/scripts/*.ts` wrappers:
+The `cdk-blocks` bin comes with the app's installed `aws-cdk-blocks` and runs inside its package scripts. A global install or an `npx` invocation is not a substitute. For an app whose scripts run generated `aws-blocks/scripts/*.ts` wrappers, call the prerelease `blocks` command, or use the 1.0.0 form `node --input-type=module -e "import 'aws-cdk-blocks/run'" -- <task>`:
 
-1. Update the app's `aws-cdk-blocks` dependency to a release that exports `/run`.
+1. Update the app's `aws-cdk-blocks` dependency to a release that provides the `cdk-blocks` bin.
 2. Install dependencies and commit that update.
-3. From the app directory, invoke the installed runner directly once. This works before the app has a `migrate` script:
+3. From the app directory, invoke the installed runner directly once. It loads only the installed package, so it works before the app has a `migrate` script:
 
 ```bash
 node --input-type=module -e "import 'aws-cdk-blocks/run'" -- migrate --dry-run
@@ -499,6 +499,8 @@ node --input-type=module -e "import 'aws-cdk-blocks/run'" -- migrate
 5. Replace any remaining calls in CI, shell scripts and custom wrappers with the matching app script; for example, use `npm run sandbox:deploy`, not an executable on `PATH`.
 
 Use `npm run migrate -- --dry-run` for subsequent checks once that script exists.
+
+An app with 1.0.0 scripts keeps working without a migration. `npm run migrate` shortens each generated task script to `cdk-blocks <task>`. A script with other arguments stays as it is.
 
 Migrate refuses, with exit 1 and a `Try:` hint, and writes nothing when:
 

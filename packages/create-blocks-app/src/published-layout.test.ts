@@ -119,6 +119,7 @@ describe('create-blocks-app version stamping from the published package', () => 
     const pkg = readManifest(join(project, 'package.json'));
     assertStamped(pkg, 'existing project');
     assert.ok(pkg.dependencies?.['aws-cdk-blocks'], 'existing project should depend on aws-cdk-blocks');
+    assert.doesNotMatch(result.output, /already depends on aws-cdk-blocks/);
   });
 
   it('keeps an @aws-cdk-blocks/* range the existing project already declares', () => {
@@ -132,6 +133,52 @@ describe('create-blocks-app version stamping from the published package', () => 
     const result = run(['.', '--yes', '--skip-install'], project);
     assert.strictEqual(result.exitCode, 0, result.output);
     assert.strictEqual(readManifest(join(project, 'package.json')).dependencies?.['aws-cdk-blocks'], '~0.1.0');
+  });
+
+  it('warns that the kept aws-cdk-blocks range may lack the cdk-blocks bin the added scripts call', () => {
+    const project = join(root, 'existing-pinned-warned');
+    mkdirSync(project, { recursive: true });
+    writeFileSync(
+      join(project, 'package.json'),
+      JSON.stringify({ name: 'existing-pinned-warned', version: '1.0.0', dependencies: { 'aws-cdk-blocks': '1.0.0' } }),
+    );
+
+    const result = run(['.', '--yes', '--skip-install'], project);
+    assert.strictEqual(result.exitCode, 0, result.output);
+    const pkg = readManifest(join(project, 'package.json'));
+    assert.strictEqual(pkg.dependencies?.['aws-cdk-blocks'], '1.0.0');
+    const wanted = cliManifest.devDependencies?.['aws-cdk-blocks'];
+    assert.ok(wanted, 'create-blocks-app lists the aws-cdk-blocks range it stamps');
+    assert.ok(result.output.includes('already depends on aws-cdk-blocks@1.0.0'), result.output);
+    assert.ok(result.output.includes(`change the dependency to ${wanted} and install again`), result.output);
+  });
+
+  it('warns about a kept aws-cdk-blocks range that the project declares in devDependencies', () => {
+    const project = join(root, 'existing-dev-pinned');
+    mkdirSync(project, { recursive: true });
+    writeFileSync(
+      join(project, 'package.json'),
+      JSON.stringify({ name: 'existing-dev-pinned', version: '1.0.0', devDependencies: { 'aws-cdk-blocks': '1.0.0' } }),
+    );
+
+    const result = run(['.', '--yes', '--skip-install'], project);
+    assert.strictEqual(result.exitCode, 0, result.output);
+    assert.strictEqual(readManifest(join(project, 'package.json')).devDependencies?.['aws-cdk-blocks'], '1.0.0');
+    assert.ok(result.output.includes('already depends on aws-cdk-blocks@1.0.0'), result.output);
+  });
+
+  it('does not warn when the existing project already declares the range the CLI writes', () => {
+    const project = join(root, 'existing-current');
+    mkdirSync(project, { recursive: true });
+    const wanted = cliManifest.devDependencies?.['aws-cdk-blocks'];
+    writeFileSync(
+      join(project, 'package.json'),
+      JSON.stringify({ name: 'existing-current', version: '1.0.0', dependencies: { 'aws-cdk-blocks': wanted } }),
+    );
+
+    const result = run(['.', '--yes', '--skip-install'], project);
+    assert.strictEqual(result.exitCode, 0, result.output);
+    assert.doesNotMatch(result.output, /already depends on aws-cdk-blocks/);
   });
 
   it('stamps the root and the cdk-blocks/ workspace when adding CDK Blocks to an Amplify Gen 2 project', () => {

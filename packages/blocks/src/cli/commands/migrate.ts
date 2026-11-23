@@ -3,8 +3,12 @@
 
 /**
  * `npm run migrate`: move an app that create-blocks-app scaffolded with
- * `aws-blocks/scripts/*.ts` lifecycle wrappers or the former `cdk-blocks` executable to package tasks.
+ * `aws-blocks/scripts/*.ts` lifecycle wrappers, the prerelease `blocks` command, or the 1.0.0
+ * `node --input-type=module -e "import 'aws-cdk-blocks/run'" -- <task>` scripts to package tasks.
  *
+ * - Every task script migrate writes runs the `cdk-blocks` bin of the installed `aws-cdk-blocks`
+ *   (`"dev": "cdk-blocks dev"`). A 1.0.0 or `blocks` task script becomes that form only when it
+ *   is exactly a task a template generated. A 1.0.0 script with other arguments stays as it is, and still runs.
  * - A wrapper is "generated" when its text, with whitespace normalised, matches
  *   a version that a create-blocks-app template shipped (the hashes below come
  *   from the git history of `packages/create-blocks-app/templates/<name>/aws-blocks/scripts/`).
@@ -166,7 +170,14 @@ function isAmplifyOverlay(root: string): boolean {
 	return text !== undefined && AMPLIFY_CLIENT_GENERATORS.includes(sourceHash(text));
 }
 
+/**
+ * The task entry a person types into a shell (the hints below): it loads the app's installed
+ * `aws-cdk-blocks`, and the `cdk-blocks` bin is on PATH only inside package scripts. The 1.0.0
+ * templates also wrote it as the prefix of every task script, which migrate shortens to {@link SCRIPT}.
+ */
 const RUN = `node --input-type=module -e "import 'aws-cdk-blocks/run'" --`;
+/** The prefix of every task script that migrate writes: the `cdk-blocks` bin of the installed `aws-cdk-blocks`. */
+const SCRIPT = 'cdk-blocks';
 const USER_TASKS: Readonly<Record<string, string>> = {
 	'docs': 'docs',
 	'docs:search': 'docs --search',
@@ -201,6 +212,9 @@ export const SCRIPT_REWRITES: Readonly<Record<string, { alias: string; wrapper: 
  * The `cdk-blocks` scripts that a prerelease build scaffolded under the
  * command's earlier name, `blocks` (`"dev": "blocks dev"`). That command no
  * longer exists, so migrate renames them.
+ *
+ * The same scripts in the 1.0.0 form, {@link RUN} and the task, still run; migrate shortens them
+ * to the `cdk-blocks` form ({@link renamedTask}). A script that is already in this set stays as it is.
  */
 const RENAMED_ALIASES: ReadonlySet<string> = new Set([
 	...Object.values(SCRIPT_REWRITES).map(({ alias }) => alias),
@@ -210,6 +224,20 @@ const RENAMED_ALIASES: ReadonlySet<string> = new Set([
 	'cdk-blocks config',
 	'cdk-blocks vendorize',
 ]);
+
+/**
+ * The `cdk-blocks` script for `value` when it is exactly a generated task under an earlier prefix:
+ * the prerelease `blocks` command (`blocks dev`) or the 1.0.0 entry ({@link RUN}` dev`).
+ * `undefined` for any other script, such as a task with arguments that no template generated.
+ */
+function renamedTask(value: string): string | undefined {
+	for (const prefix of ['blocks', RUN]) {
+		if (!value.startsWith(`${prefix} `)) continue;
+		const to = `${SCRIPT} ${value.slice(prefix.length + 1)}`;
+		if (RENAMED_ALIASES.has(to)) return to;
+	}
+	return undefined;
+}
 
 /**
  * Wrappers a wrapper runs at runtime, beyond what its import statements show.
@@ -822,8 +850,9 @@ export function planMigration(
 	for (const [name, value] of Object.entries(scripts)) {
 		// Own keys only: a script whose value is "toString" or "constructor" is not a generated command.
 		const rewrite = Object.hasOwn(SCRIPT_REWRITES, value) ? SCRIPT_REWRITES[value] : undefined;
+		const renamed = renamedTask(value);
 		if (rewrite) {
-			const to = `${RUN} ${rewrite.alias.slice('cdk-blocks '.length)}`;
+			const to = rewrite.alias;
 			const wrapper = byFile.get(rewrite.wrapper);
 			// A customized wrapper keeps its script: the alias would drop the customization.
 			if (wrapper && !wrapper.generated) {
@@ -867,10 +896,9 @@ export function planMigration(
 			}
 			scripts[name] = to;
 			result.scriptsRewritten[name] = { from: value, to };
-		} else if (RENAMED_ALIASES.has(value) || RENAMED_ALIASES.has(`cdk-${value}`)) {
-			const to = `${RUN} ${value.slice(value.indexOf(' ') + 1)}`;
-			scripts[name] = to;
-			result.scriptsRewritten[name] = { from: value, to };
+		} else if (renamed !== undefined) {
+			scripts[name] = renamed;
+			result.scriptsRewritten[name] = { from: value, to: renamed };
 		} else if (wrappers.some((w) => refersTo(value, 'package.json', w, { bare: true }))) {
 			result.kept.push({
 				file: `package.json#scripts.${name}`,
@@ -881,10 +909,10 @@ export function planMigration(
 
 	const generateClient = scripts['blocks:generate-client'];
 	const tasks = {
-		...Object.fromEntries(Object.entries(USER_TASKS).map(([name, command]) => [name, `${RUN} ${command}`])),
+		...Object.fromEntries(Object.entries(USER_TASKS).map(([name, command]) => [name, `${SCRIPT} ${command}`])),
 		...(generateClient === undefined && isAmplifyOverlay(root)
 			? {}
-			: { 'generate-client': generateClient ?? `${RUN} generate client` }),
+			: { 'generate-client': generateClient ?? `${SCRIPT} generate client` }),
 	};
 	for (const [name, to] of Object.entries(tasks)) {
 		if (Object.hasOwn(scripts, name)) continue;

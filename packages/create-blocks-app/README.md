@@ -69,12 +69,12 @@ In an Amplify Gen 2 project (`amplify/backend.ts` exists), the same command inte
 
 ### Package.json Scripts
 
-Every CDK Blocks task is an npm script that loads the app's installed `aws-cdk-blocks/run` entry. The dev server settings live in `package.json#blocks.dev`:
+Every AWS CDK Blocks task is an npm script that calls the `cdk-blocks` bin of the app's installed `aws-cdk-blocks`. Run it with `npm run <task>`: the bin is on `PATH` only inside package scripts, and a global install or an `npx` invocation is not a substitute. The dev server settings live in `package.json#blocks.dev`:
 
 ```json
 {
   "scripts": {
-    "dev": "node --input-type=module -e \"import 'aws-cdk-blocks/run'\" -- dev"
+    "dev": "cdk-blocks dev"
   },
   "blocks": {
     "dev": { "frontendPort": 3100 }
@@ -91,9 +91,9 @@ Run `npm run help` for the task list or `npm run help sandbox destroy` for one t
 | Existing project | The template's CDK Blocks tasks, such as `sandbox`, `sandbox:destroy`, `sandbox:console`, `deploy`, `destroy` and `dev:stop`, plus `dev:server` for the `dev` task | Only the template's `port` and `"frontend": false`, unless your `package.json` already has `blocks.dev`. A backend-only template in a Vite or Next.js project runs the backend only; any other template runs the project's own Vite or Next.js dev server |
 | Amplify Gen 2 project | `blocks:dev` for the `dev` task, `blocks:stop`, and `blocks:generate-client`, which runs the overlay's own `cdk-blocks/scripts/generate-client.ts`: its client needs the Amplify auth middleware and the API URL from `amplify_outputs.json` | `{ "port": 3001, "frontend": false, "generateClient": false }`: the Amplify app runs its own frontend and keeps its own client |
 
-In an existing project, the CLI preserves existing scripts and avoids their `pre` and `post` hooks. It tries `blocks:<name>` for a conflicting unprefixed name, then numbered variants if needed. Use the name printed by the CLI, or find the `aws-cdk-blocks/run` entry with the task's trailing command in `package.json`.
+In an existing project, the CLI preserves existing scripts and avoids their `pre` and `post` hooks. It tries `blocks:<name>` for a conflicting unprefixed name, then numbered variants if needed. Use the name printed by the CLI, or find the `cdk-blocks` script with the task's command in `package.json`.
 
-An app whose scripts run `aws-blocks/scripts/*.ts` wrappers: update `aws-cdk-blocks`, then run `node --input-type=module -e "import 'aws-cdk-blocks/run'" -- migrate` from the app root to switch its scripts to this form and delete the wrappers it generated. See [Migrating an existing app](https://github.com/aws/cdk-blocks/tree/main/packages/blocks#migrating-an-existing-app).
+An app whose scripts run `aws-blocks/scripts/*.ts` wrappers: update `aws-cdk-blocks`, then run `node --input-type=module -e "import 'aws-cdk-blocks/run'" -- migrate` from the app root to switch its scripts to this form and delete the wrappers it generated. See [Migrating an existing app](https://github.com/aws/cdk-blocks/tree/main/packages/blocks#migrating-an-existing-app). An app whose scripts use the 1.0.0 form, `node --input-type=module -e "import 'aws-cdk-blocks/run'" -- <task>`, keeps working, and `npm run migrate` shortens them to `cdk-blocks <task>`.
 
 ### `@aws-cdk-blocks/*` Dependency Versions
 
@@ -111,7 +111,7 @@ Every `@aws-cdk-blocks/*` package the CLI writes into your `package.json` (and i
 - A reinstall stays on that release line and picks up later releases on it.
 - Before 1.0, a new minor (`0.9.x` to `0.10.0`) is a new, breaking release line, and your app moves to it only when you edit the range.
 - The CLI is released with every `aws-cdk-blocks` release, so the latest CLI starts a new app on the latest `aws-cdk-blocks` release.
-- If you add CDK Blocks to an existing project that already lists one of these packages in `dependencies`, your range is kept.
+- If you add AWS CDK Blocks to an existing project that already lists one of these packages in `dependencies`, your range is kept. For `aws-cdk-blocks`, the CLI prints a warning when your range is not the one it writes: the added scripts call the `cdk-blocks` bin, and `aws-cdk-blocks` 1.0.0 does not have it.
 - For an Amplify Gen 2 project, `cdk-blocks/package.json` follows the root's range too (from `dependencies` or `devDependencies`) when it is a semver range; a `*`, path or protocol spec gets the stamp instead.
 - An app that declares `"*"` for an `@aws-cdk-blocks/*` package can pull a breaking release on its next clean install. Replace each `"*"` with a caret range for the version you have installed (`npm ls aws-cdk-blocks` shows it), then run `npm install`.
 

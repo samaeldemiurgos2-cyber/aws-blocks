@@ -6,7 +6,7 @@
 - **Frontend:** `src/` — imports backend APIs via `import { api } from 'cdk-blocks'`
 - **Imports:** backend code imports `Scope`, `ApiNamespace`, `ApiError`, `isBlocksError` and every Building Block class from `aws-cdk-blocks`, along with the block's errors constant where it has one there (e.g. `KVStore`, `KVStoreErrors`; `Realtime`, `Compute` and `Tracer` come without one); browser code and tests import client helpers from `aws-cdk-blocks/client`.
 - **Tests:** Run `test/e2e.test.ts` with `npm run test:e2e`. When the API changes, update the tests to exercise the new behavior; keep the `test/` directory and the `test:e2e` script.
-- **Script names:** In an existing project, look in `package.json` under `scripts` for the `aws-cdk-blocks/run` entry with the matching trailing command. Use its actual script name if an overlay preserved an existing name.
+- **Script names:** In an existing project, look in `package.json` under `scripts` for the `cdk-blocks` script with the matching command (`"blocks:dev": "cdk-blocks dev"`). Use its actual script name if an overlay preserved an existing name.
 - **AWS CDK Blocks docs:** `npm run docs` is the docs command for this app's Building Blocks and CDK Blocks APIs. It answers types, signatures and how a block behaves, so there's no need to open the packages' source unless necessary. With no arguments it lists the blocks; name one or more blocks or APIs to print their docs: `npm run docs KVStore Auth`. A name can be a block, an export, a type, a function, an option or a method (`ApiError`, `AuthState`, `submitAuthAction`, `ifFieldEquals`, `Secret.get`): it prints the import line, the declaration and the docs about it. `--section <topic>` prints the part of a block's docs about a topic (`npm run docs KVStore -- --section local` for how it behaves on your machine), `npm run docs:api KVStore` prints exact signatures, `npm run docs -- --exports [filter]` lists what you can import and from which entry, `npm run docs:search <term>` searches all the docs, and `npm run docs -- --help` shows every option.
 
 ## Framework model
@@ -258,7 +258,7 @@ If you will immediately self-test the frontend, add `npm run deploy -- --wait-li
 
 ## CDK Blocks CLI
 
-Run the npm scripts from the app root. They load the installed `aws-cdk-blocks/run` entry without downloading a CLI. Pass positional arguments directly (`npm run docs KVStore`) and put flags after `--` (`npm run dev -- --port 4000`).
+Run the npm scripts from the app root. They call the `cdk-blocks` bin of the installed `aws-cdk-blocks`, without downloading a CLI. The bin is on `PATH` only inside package scripts, so always use `npm run <task>`. Pass positional arguments directly (`npm run docs KVStore`) and put flags after `--` (`npm run dev -- --port 4000`).
 
 - `npm run help` lists every command; `npm run help <command>` (for example `npm run help sandbox destroy`) shows one command's flags and examples.
 - `--output json` prints one JSON document on stdout and keeps progress on stderr; `--query <field>` prints one field raw, for example `npm run -s deploy -- --query apiUrl` or `npm run -s whoami -- --query stacks.production`. Structured tasks, including docs, default to text in a terminal and JSON when stdout is piped or redirected. Use `npm run -s docs KVStore | jq .` to suppress npm banners. Override the format with `-- --output text` or `-- --output json`. Help and version default to text.
