@@ -10,6 +10,7 @@
 import type { ScopeParent } from '@aws-cdk-blocks/core';
 import { RawRoute, Scope, registerSdkIdentifiers } from '@aws-cdk-blocks/core';
 import { renderLocalDashboard } from './local-dashboard.js';
+import { deriveDashboardName } from './naming.js';
 import type { DashboardOptions } from './types.js';
 import { BB_NAME, BB_VERSION } from './version.js';
 import { assertNotMockInDeployedEnv } from '@aws-cdk-blocks/core/bb-utils';
@@ -62,14 +63,15 @@ export class Dashboard extends Scope {
 					? `${scope.id}-${id}`
 					: id;
 		const title = options?.title ?? id;
-		this.dashboardName = (options?.dashboardName ?? this.fullId).replace(/[^A-Za-z0-9\-_]/g, '-').substring(0, 255);
+		this.dashboardName = deriveDashboardName(id, options?.dashboardName, this.fullId);
 		registerSdkIdentifiers(this.fullId, { dashboardName: this.dashboardName });
 
 		const routePath = options?.routePath;
 		if (routePath !== false) {
 			const path = routePath ?? '/cdk-blocks/dashboard';
 			const page = renderLocalDashboard(title, options);
-			new RawRoute(scope, 'dashboard-redirect', {
+			// Mounted on this block, as in the CDK and AWS layers.
+			new RawRoute(this, 'dashboard-redirect', {
 				method: 'GET',
 				path,
 				handler: async ({ response }) => {

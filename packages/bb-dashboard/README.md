@@ -63,8 +63,8 @@ new Dashboard(scope: ScopeParent, id: string, options?: DashboardOptions)
 
 | Name | Type | Description |
 |------|------|-------------|
-| `url` | `string \| null` | CloudWatch Dashboard console URL (CfnOutput). `string` on the CDK construct; `null` in the default/mock type until deployed |
-| `dashboardName` | `string` | The resolved dashboard name. In a deployed function it is `id`, not the `fullId`, when the `dashboardName` option is unset |
+| `url` | `string \| null` | This dashboard's CloudWatch console URL (CfnOutput). `string` on the CDK construct; on the AWS runtime, derived from the region (`AWS_REGION`, else `AWS_DEFAULT_REGION`) and `dashboardName`; `null` in the default/mock type until deployed |
+| `dashboardName` | `string` | The resolved dashboard name (the `dashboardName` option, else the block's `fullId`), the same in every layer |
 
 ### Options
 
@@ -159,6 +159,14 @@ const dashboard = new Dashboard(scope, 'dashboard', {
   routePath: '/ops/dashboard',
 });
 // GET /ops/dashboard → 302 → https://<region>.console.aws.amazon.com/cloudwatch/...
+```
+
+An app can have several dashboards. Give each its own `routePath` (two routes
+can't share a path); each route redirects to its own dashboard:
+
+```typescript
+new Dashboard(scope, 'orders', { routePath: '/ops/orders' });   // → the orders dashboard
+new Dashboard(scope, 'billing', { routePath: '/ops/billing' }); // → the billing dashboard
 ```
 
 ## Local development
