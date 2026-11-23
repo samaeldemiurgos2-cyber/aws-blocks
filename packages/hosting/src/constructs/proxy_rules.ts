@@ -22,6 +22,7 @@
  */
 import { Annotations } from 'aws-cdk-lib';
 import type { IConstruct } from 'constructs';
+import parseCacheControl from 'parse-cache-control';
 import type { DoorHeaderRule, DoorRedirect } from './front_door.js';
 import { CF_MATCH_HELPERS, headerRowsJs, redirectRowsJs } from './kvs_router.js';
 
@@ -140,5 +141,83 @@ export const warnRulesNotApplied = (scope: IConstruct, what: UnreachedByProxies)
   Annotations.of(scope).addWarningV2(
     '@aws-cdk-blocks/hosting:DoorRulesNotApplied',
     `${what.door} front door: ${notes.join('; ')}. The CloudFront door (or the stacked door's edge) applies them to every response.`,
+  );
+};
+
+/** At most this many routes are named in the {@link warnNoEdgeCache} message. */
+const NO_EDGE_CACHE_ROUTES_NAMED = 5;
+
+/**
+ * Whether a `Cache-Control` value asks a shared cache (a CDN, not the browser)
+ * to store the response: `s-maxage` above zero, or `stale-while-revalidate` /
+ * `stale-if-error` on a response that is shared-cacheable (`public` or
+ * `s-maxage`). `private` or `no-store` rule it out. Directive names are
+ * case-insensitive; an unparseable value asks for nothing.
+ */
+const asksSharedCache = (value: string): boolean => {
+  const header = parseCacheControl(value.toLowerCase());
+  if (header === null) return false;
+  // The typings list only a few directives; the parser returns every one it reads.
+  const parsed: Readonly<Record<string, string | number | boolean | undefined>> = { ...header };
+  if (parsed.private || parsed['no-store']) return false;
+  const sMaxAge = Number.parseInt(String(parsed['s-maxage'] ?? ''), 10);
+  if (sMaxAge > 0) return true;
+  const shared = parsed.public === true || parsed['s-maxage'] !== undefined;
+  return shared && (parsed['stale-while-revalidate'] !== undefined || parsed['stale-if-error'] !== undefined);
+};
+
+/**
+ * The patterns of the app's header rules whose `Cache-Control` asks a shared
+ * cache to store the response (`s-maxage` above zero, or
+ * `stale-while-revalidate` / `stale-if-error` on a `public` or `s-maxage`
+ * response, and neither `private` nor `no-store`): the edge-cache intent a
+ * door without an edge cache drops.
+ * The Nitro adapter turns `routeRules` `swr` and `cache.maxAge` into such rules;
+ * the Next.js adapter lifts `next.config` `headers()`.
+ *
+ * @param headers the app's header rules.
+ * @returns the matching patterns, in rule order, without duplicates.
+ */
+export const edgeCacheRoutes = (headers: readonly DoorHeaderRule[]): string[] => {
+  const routes = headers
+    .filter((rule) =>
+      Object.entries(rule.headers).some(
+        ([name, value]) => name.toLowerCase() === 'cache-control' && asksSharedCache(value),
+      ),
+    )
+    .map((rule) => rule.pattern);
+  return [...new Set(routes)];
+};
+
+/**
+ * Warn at synth (`@aws-cdk-blocks/hosting:NoEdgeCache`), once per app, when
+ * the app asks for edge caching (see {@link edgeCacheRoutes}) behind a door
+ * that has no edge cache (the ALB and API Gateway doors). No shared cache
+ * stores responses there, so each visitor's requests for those routes reach
+ * the server (the browser's own cache still applies to `max-age`; only a
+ * server-side cache, such as Nitro's or OpenNext's, spares a render) and the
+ * `Cache-Control` reaches the browser unchanged. No warning for an app without
+ * such a rule.
+ *
+ * @param scope the door construct.
+ * @param door the door's name in the message (e.g. `ALB`).
+ * @param headers the app's header rules.
+ */
+export const warnNoEdgeCache = (scope: IConstruct, door: string, headers: readonly DoorHeaderRule[]): void => {
+  const routes = edgeCacheRoutes(headers);
+  if (routes.length === 0) return;
+  const named = routes.slice(0, NO_EDGE_CACHE_ROUTES_NAMED).join(', ');
+  const more = routes.length > NO_EDGE_CACHE_ROUTES_NAMED ? ` and ${routes.length - NO_EDGE_CACHE_ROUTES_NAMED} more` : '';
+  Annotations.of(scope).addWarningV2(
+    '@aws-cdk-blocks/hosting:NoEdgeCache',
+    `${door} front door has no edge cache: ${named}${more} set a shared-cache Cache-Control ` +
+      '(s-maxage, stale-while-revalidate or stale-if-error), but no shared cache stores ' +
+      "responses, so each visitor's requests for these routes reach the server (the browser's own cache still applies " +
+      'to `max-age`) and the header reaches the browser unchanged. ' +
+      "Only server-side caches apply: Nitro's `swr` and `cache` route rules (Hosting's S3 cache; " +
+      '`defineCachedEventHandler` too when a route rule turns that cache on, otherwise it caches in memory per ' +
+      "instance) and Next.js ISR (OpenNext's incremental cache, unless `incrementalRegeneration: false`); " +
+      'other servers render every request. ' +
+      'For an edge cache, use the CloudFront door or the stacked door.',
   );
 };

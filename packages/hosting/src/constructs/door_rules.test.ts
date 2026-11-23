@@ -21,6 +21,7 @@ import { App, Stack } from 'aws-cdk-lib';
 import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
 import type { DeployManifest } from '../manifest/types.js';
 import { doorCapabilitiesFor, HostingConstruct, type HostingConstructProps } from './hosting_construct.js';
+import { edgeCacheRoutes } from './proxy_rules.js';
 
 const API_URL = 'https://abc123.execute-api.us-west-2.amazonaws.com/prod/cdk-blocks/api';
 const WARNING = '@aws-cdk-blocks/hosting:DoorRulesNotApplied';
@@ -205,7 +206,77 @@ describe("regional doors apply the app's redirects, header rules and error pages
       const label = JSON.stringify(frontDoor ?? 'cloudfront');
       assert.equal(warned(innerWildcard(), frontDoor, 'RouteNotExpressible', extra), caps.wildcardRoutes === false, `${label} wildcardRoutes`);
       assert.equal(warned(ssr(), frontDoor, 'DoorRulesNotApplied', extra), caps.appliesRules === false, `${label} appliesRules`);
+      assert.equal(warned(cacheable(), frontDoor, 'NoEdgeCache', extra), caps.edgeCache === false, `${label} edgeCache`);
     }
+  });
+
+  // An SSR app whose header rules ask the edge to cache two routes (what the
+  // Nitro adapter emits for `routeRules` `swr` and `cache.maxAge`).
+  const cacheable = (): DeployManifest => ({
+    ...ssr(),
+    headers: [
+      ...rules.headers,
+      { source: '/swr', headers: { 'Cache-Control': 'public, s-maxage=20, stale-while-revalidate=31536000' } },
+      { source: '/cached/*', headers: { 'cache-control': 'public, max-age=60, s-maxage=60' } },
+      { source: '/browser-only', headers: { 'Cache-Control': 'public, max-age=60' } },
+    ],
+  });
+  const noEdgeCacheWarnings = (manifest: DeployManifest, frontDoor: HostingConstructProps['frontDoor'], extra = {}) => {
+    // A sandbox deploy: a plain-HTTP ALB door with an API fails synth in production (PlainHttpFrontDoorError).
+    const stack = new Stack(new App({ context: { sandboxMode: 'true' } }), 'C', { env: { account: '111111111111', region: 'us-west-2' } });
+    new HostingConstruct(stack, 'Hosting', { manifest, frontDoor, backendApi: { url: API_URL }, ...extra });
+    return Annotations.fromStack(stack).findWarning('*', Match.stringLikeRegexp('NoEdgeCache'));
+  };
+
+  it('ALB and API Gateway (HTTP and REST): one NoEdgeCache warning naming the shared-cache routes and the doors that cache', () => {
+    const domain = { domainName: 'app.example.com', hostedZoneId: 'Z1234567890ABC', hostedZone: 'example.com' };
+    for (const [frontDoor, extra, name] of [
+      [{ kind: 'alb' }, {}, 'ALB'],
+      [{ kind: 'apiGateway' }, {}, 'API Gateway'],
+      [{ kind: 'apiGateway', api: 'rest' }, { domain }, 'API Gateway \\(REST\\)'],
+    ] as const) {
+      const warnings = noEdgeCacheWarnings(cacheable(), frontDoor, extra);
+      assert.equal(warnings.length, 1, JSON.stringify(frontDoor));
+      const text = warningText(warnings);
+      assert.match(text, new RegExp(`^${name} front door has no edge cache: /swr, /cached/\\* set a shared-cache`));
+      assert.doesNotMatch(text, /\/browser-only|\/assets/, 'a rule without a shared-cache directive is not named');
+      assert.match(text, /each visitor's requests for these routes reach the server \(the browser's own cache still applies to `max-age`\)/);
+      assert.match(text, /unless `incrementalRegeneration: false`/);
+      assert.match(text, /otherwise it caches in memory per instance/);
+      assert.match(text, /use the CloudFront door or the stacked door/);
+    }
+  });
+
+  it('NoEdgeCache: no warning without a shared-cache rule, nor behind a door with an edge cache', () => {
+    assert.deepEqual(noEdgeCacheWarnings(ssr(), { kind: 'alb' }), []);
+    assert.deepEqual(noEdgeCacheWarnings(ssr(), { kind: 'apiGateway' }), []);
+    assert.deepEqual(noEdgeCacheWarnings(cacheable(), undefined), []);
+    assert.deepEqual(noEdgeCacheWarnings(cacheable(), { kind: 'stackedRouter' }), []);
+  });
+
+  it('NoEdgeCache: names only routes whose Cache-Control asks a shared cache to store them', () => {
+    const asks = (value: string) => edgeCacheRoutes([{ pattern: '/r', headers: { 'Cache-Control': value } }]).length === 1;
+    // Asks a shared cache: s-maxage above zero, or SWR / SIE on a shared-cacheable response.
+    assert.equal(asks('public, s-maxage=60'), true);
+    assert.equal(asks('S-MaxAge=60'), true, 'directive names are case-insensitive');
+    assert.equal(asks('public, max-age=60, stale-while-revalidate=30'), true);
+    assert.equal(asks('public, stale-if-error=600'), true);
+    // Doesn't: s-maxage=0, private or no-store, or SWR on a browser-only response.
+    assert.equal(asks('s-maxage=0'), false);
+    assert.equal(asks('s-maxage=0, stale-while-revalidate=30'), true, 's-maxage=0 still makes SWR shared');
+    assert.equal(asks('private, s-maxage=60'), false);
+    assert.equal(asks('no-store, s-maxage=60'), false);
+    assert.equal(asks('max-age=60, stale-while-revalidate=30'), false, 'a browser honors SWR without a shared cache');
+    assert.equal(asks('public, max-age=60'), false);
+  });
+
+  it('NoEdgeCache: names at most five routes, then how many more', () => {
+    const many: DeployManifest = {
+      ...ssr(),
+      headers: Array.from({ length: 8 }, (_, i) => ({ source: `/p${i}`, headers: { 'Cache-Control': 's-maxage=10' } })),
+    };
+    const text = warningText(noEdgeCacheWarnings(many, { kind: 'apiGateway' }));
+    assert.match(text, /: \/p0, \/p1, \/p2, \/p3, \/p4 and 3 more set a shared-cache/);
   });
 });
 
