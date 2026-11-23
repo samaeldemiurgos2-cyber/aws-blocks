@@ -1279,6 +1279,59 @@ of the cache-key header slots; when `cacheKeyHeaders` already uses all five, it
 stays out of the key and synth warns with
 `@aws-cdk-blocks/hosting:ImageAcceptNotInCacheKey`.
 
+### On-demand revalidation (Next.js)
+
+OpenNext serves an ISR page with `s-maxage` set to the time left in its
+`revalidate` window, and CloudFront keeps it for that long. So that
+`revalidateTag()`, `revalidatePath()` and `res.revalidate()` show up at the
+edge straight away, the Next.js server behind the CloudFront door invalidates
+the distribution after each on-demand revalidation:
+
+- `revalidateTag('posts')` invalidates every cached page that used data tagged
+  `posts` (through `fetch` or `unstable_cache`), as listed in the tag cache.
+- `revalidatePath('/blog/hello')` invalidates `/blog/hello`. A layout or
+  dynamic-segment form (`revalidatePath('/blog/[slug]', 'page')`) invalidates
+  the cached pages under it.
+- Each page gets one wildcard path, `/blog/hello*`, which covers its HTML and
+  RSC payload, its query-string variants (`/blog/hello?ref=x`, cached apart
+  because the SSR cache policy keys on the query string) and its
+  `trailingSlash: true` form (`/blog/hello/`). The wildcard also takes URLs
+  that start with the same characters (`/blog/hello-world`, `/blog/hello/2`);
+  those pages cost one extra origin request. The root page gets the exact `/`
+  instead (a `/*` would purge the whole distribution), so its query-string
+  variants keep their cached copy until their `s-maxage` runs out.
+- A Pages Router page also gets its data route
+  (`/_next/data/<build id>/blog/hello.json*`).
+- With a `basePath` the paths are prefixed with it.
+- CloudFront allows 15 wildcard paths in progress per account at once. A
+  revalidation that needs more than 15 (16 App Router pages, or 8 Pages Router
+  pages with their data routes) issues a single `/*` (`<basePath>*` with a
+  `basePath`) instead. If CloudFront rejects a request because other
+  invalidations are still in progress, the server retries once with that
+  single `/*`.
+
+Each revalidation issues one CloudFront invalidation request. CloudFront allows
+1,000 invalidation paths a month at no charge and bills each path after that
+(a `/*` counts as one). The construct gives the server
+`cloudfront:CreateInvalidation` on its own distribution only, and the
+distribution id through an SSM parameter (`ssm:GetParameter` on that parameter
+only). An invalidation usually completes within seconds and can take a few
+minutes. A revalidation still succeeds if the invalidation fails: the
+error is logged in the server function's log group, and the edge keeps the old
+page until its `s-maxage` runs out.
+
+This is set up when the adapter generates `open-next.config.ts` (the default)
+and the build uses `@opennextjs/aws` 4.1.14 or later (the adapter's default;
+earlier releases don't pass `revalidateTag` to the handler). It is not set up
+for an older `@opennextjs/aws`, a project with its own `open-next.config.ts`, a
+build with `runtime: 'edge'` routes (OpenNext also compiles the config for the edge
+runtime, where the handler can't run), a preview deploy without the tag cache,
+or front doors other than CloudFront (they don't cache SSR responses). There,
+an on-demand revalidation reaches the edge once the page's `s-maxage` runs out
+(at most 1 day). To make it visible sooner, lower the page's `revalidate` (a
+shorter `s-maxage`), or invalidate the paths yourself after revalidating them
+(`aws cloudfront create-invalidation`).
+
 ## Custom domains (CloudFront door)
 
 Configure a custom domain through `frontDoor.features.domain`
