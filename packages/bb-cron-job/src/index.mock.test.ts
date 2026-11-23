@@ -42,7 +42,7 @@ describe('CronJob mock – schedules far in the future', () => {
 		while (Date.now() < until) {
 			mock.timers.tick(Math.min(3_600_000, until - Date.now()));
 		}
-		assert.deepStrictEqual(fired, ['2028-02-29T00:00:00.000Z']);
+		assert.deepStrictEqual(fired, ['2028-02-29T00:00:00Z']);
 	});
 
 	test('a yearly schedule more than 24.8 days away waits for its date', () => {
@@ -58,7 +58,7 @@ describe('CronJob mock – schedules far in the future', () => {
 		while (Date.now() < until) {
 			mock.timers.tick(Math.min(3_600_000, until - Date.now()));
 		}
-		assert.deepStrictEqual(fired, ['2027-01-01T00:00:00.000Z']);
+		assert.deepStrictEqual(fired, ['2027-01-01T00:00:00Z']);
 	});
 });
 
@@ -101,7 +101,7 @@ describe('CronJob mock – rate schedules longer than a timer allows', () => {
 		while (Date.now() < until) {
 			mock.timers.tick(Math.min(86_400_000, until - Date.now()));
 		}
-		assert.deepStrictEqual(fired, ['2026-03-31T00:00:00.000Z', '2026-04-30T00:00:00.000Z']);
+		assert.deepStrictEqual(fired, ['2026-03-31T00:00:00Z', '2026-04-30T00:00:00Z']);
 	});
 
 	test('rate(30 days) runs once after the clock jumps past several intervals, then resumes its cadence', () => {
@@ -121,15 +121,84 @@ describe('CronJob mock – rate schedules longer than a timer allows', () => {
 		}
 		assert.deepStrictEqual(fired, []);
 
-		// One jump of 75 days passes the slots due on 03-31, 04-30 and 05-30.
+		// One jump of 75 days passes the slots due on 03-31, 04-30 and 05-30. The one run reports
+		// the latest of them, 05-30, as its scheduledTime.
 		mock.timers.tick(75 * 86_400_000);
-		assert.deepStrictEqual(fired, ['2026-06-13T00:00:00.000Z']);
+		assert.deepStrictEqual(fired, ['2026-05-30T00:00:00Z']);
 
 		const until = new Date('2026-06-30T00:00:00Z').getTime();
 		while (Date.now() < until) {
 			mock.timers.tick(Math.min(86_400_000, until - Date.now()));
 		}
-		assert.deepStrictEqual(fired, ['2026-06-13T00:00:00.000Z', '2026-06-29T00:00:00.000Z']);
+		assert.deepStrictEqual(fired, ['2026-05-30T00:00:00Z', '2026-06-29T00:00:00Z']);
+	});
+});
+
+describe('CronJob mock – scheduledTime is the schedule slot', () => {
+	beforeEach(() => {
+		mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: new Date('2026-03-01T00:00:00Z') });
+		mock.method(console, 'log', () => {});
+	});
+
+	afterEach(() => {
+		mock.timers.reset();
+		mock.restoreAll();
+	});
+
+	test('a cron schedule reports the slot, not the moment a late timer fired', () => {
+		const fired: string[] = [];
+		new CronJob(fakeScope, 'every-ten', {
+			schedule: 'cron(0/10 * * * ? *)',
+			handler: async (event) => {
+				fired.push(event.scheduledTime);
+			},
+		});
+
+		// The timer runs 1.5 s after the 00:10 slot, more than the milliseconds the format
+		// drops, so only an event that carries the slot passes.
+		mock.timers.tick(10 * 60_000 + 1_500);
+		assert.deepStrictEqual(fired, ['2026-03-01T00:10:00Z']);
+	});
+
+	test('a rate schedule reports each slot, not the moment a late timer fired', () => {
+		const fired: string[] = [];
+		new CronJob(fakeScope, 'every-five', {
+			schedule: 'rate(5 minutes)',
+			handler: async (event) => {
+				fired.push(event.scheduledTime);
+			},
+		});
+
+		// As above, the first timer runs 1.5 s late so the test checks the slot, not the format.
+		mock.timers.tick(5 * 60_000 + 1_500);
+		mock.timers.tick(5 * 60_000);
+		assert.deepStrictEqual(fired, ['2026-03-01T00:05:00Z', '2026-03-01T00:10:00Z']);
+	});
+
+	test('a rate schedule reports the latest due slot after the machine wakes from sleep', () => {
+		// During a suspend the wall clock moves on but setInterval's monotonic clock does not. The
+		// mocked timers stand in for the monotonic clock and a stubbed Date.now for the wall clock.
+		// (mock.timers.setTime would leave the interval's due times behind and replay every one.)
+		mock.timers.reset();
+		mock.timers.enable({ apis: ['setInterval'] });
+		let wallMs = Date.parse('2026-03-01T00:00:00Z');
+		mock.method(Date, 'now', () => wallMs);
+		const fired: string[] = [];
+		new CronJob(fakeScope, 'every-five-after-sleep', {
+			schedule: 'rate(5 minutes)',
+			handler: async (event) => {
+				fired.push(event.scheduledTime);
+			},
+		});
+
+		wallMs += 5 * 60_000;
+		mock.timers.tick(5 * 60_000);
+		// One hour asleep: the wall clock gains an hour more than the interval saw.
+		wallMs += 3_600_000 + 5 * 60_000;
+		mock.timers.tick(5 * 60_000);
+		wallMs += 5 * 60_000;
+		mock.timers.tick(5 * 60_000);
+		assert.deepStrictEqual(fired, ['2026-03-01T00:05:00Z', '2026-03-01T01:10:00Z', '2026-03-01T01:15:00Z']);
 	});
 });
 

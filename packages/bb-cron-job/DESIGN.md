@@ -168,6 +168,7 @@ No `fromExisting()` — wrapping an existing EventBridge schedule is not support
 - **Rate schedules** — `setInterval` with the computed interval in milliseconds when it fits a timer (`MAX_TIMEOUT_MS`, 2^31-1 ms, about 24.8 days); a longer interval waits in `setTimeout` steps toward an absolute fire time, fires, then schedules the first slot still in the future on the same cadence, so slots missed during a clock jump (for example sleep) are not run. Timers on both paths are `unref()`'d to avoid blocking process exit.
 - **Cron schedules** — `setTimeout` to the next fire time, computed via `nextCronTime()`. After each fire, the next timeout is scheduled recursively.
 - **Timezone support** — `Intl.DateTimeFormat` with the specified timezone extracts local time components for cron matching.
+- **`scheduledTime`** — the schedule slot the timer was set for, not the moment it ran, formatted to whole seconds (`2026-03-01T00:10:00Z`) like EventBridge Scheduler's `<aws.scheduler.scheduled-time>`. Rate slots count from the start time rounded down to the second. Rate slots are counted from the wall clock, so after a suspend or clock jump the next run of either rate path reports the latest slot that was due.
 - **Console logging** — logs `[CronJob:{id}] triggered at {timestamp}` on each fire, and `[CronJob:{id}] registered (disabled)` when `enabled: false`.
 - **Error handling** — handler errors are caught and logged with a warning that AWS would retry.
 - **Validation** — `parseSchedule()` validates cron/rate expressions; `validateTimezone()` validates IANA timezone strings.
@@ -190,7 +191,7 @@ This is a brute-force approach that trades performance for correctness. Acceptab
 
 | Behavior Difference | Impact | Mitigation |
 |------------|--------|------------|
-| Local cron timing may drift | Schedule fires at slightly different times than EventBridge | No mitigation — timing precision is not critical for correctness |
+| Local cron timing may drift | Schedule fires at slightly different times than EventBridge. `scheduledTime` still reports the exact slot, as on AWS | No mitigation — timing precision is not critical for correctness |
 | No EventBridge retry in mock | Failed handlers are not retried locally | Mock logs the error with a warning that AWS would retry |
 | Handler runs in-process (not isolated) | Shared memory, no cold start, no timeout enforcement | Lambda jobs share the selected function's environment; container deliveries use worker threads and enforce configured timeouts. Use a sandbox to exercise those paths. |
 | `compute` and `timeoutSeconds` are ignored | A container job runs in-process and is not stopped at `timeoutSeconds` locally | Same as AsyncJob's mock; deploy to a sandbox to exercise container delivery |
