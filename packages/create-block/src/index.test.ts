@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from 'node:assert';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { describe, mock, test } from 'node:test';
+import { dirname, join } from 'node:path';
+import { describe, mock, type TestContext, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
 	deriveNames,
 	findCustomerWorkspaceRoot,
@@ -392,5 +394,54 @@ describe('run() integration — external mode next steps', () => {
 			await nextStepsCd(['--dir', "x;$(id)'y"]),
 			`  1. cd 'x;$(id)'\\''y' && npm run build && npm test`,
 		);
+	});
+});
+
+describe('CLI entry point', () => {
+	const distDir = dirname(fileURLToPath(import.meta.url));
+
+	/**
+	 * Create a symlink at `<tmp>/<linkName>` to `target`, then run `node <tmp>/<entry> --help`.
+	 * `--help` prints the usage and returns before any file or network access.
+	 * Returns `undefined` after skipping the test when the platform refuses to create a file symlink.
+	 */
+	function helpThroughSymlink(
+		t: TestContext,
+		target: string,
+		type: 'file' | 'junction',
+		linkName: string,
+		entry: string,
+	) {
+		const dir = mkdtempSync(join(tmpdir(), 'create-block-symlink-'));
+		try {
+			try {
+				// The type applies on Windows only. A junction needs no elevation there, but it can only target a directory.
+				symlinkSync(target, join(dir, linkName), type);
+			} catch (err) {
+				const code = (err as NodeJS.ErrnoException).code;
+				if (type !== 'file' || (code !== 'EPERM' && code !== 'EACCES')) throw err;
+				// Windows refuses file symlinks without elevation or Developer Mode.
+				t.skip(`symlink creation unsupported: ${code}`);
+				return undefined;
+			}
+			return spawnSync(process.execPath, [join(dir, entry), '--help'], { encoding: 'utf-8', timeout: 30_000 });
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	}
+
+	// npm, npx and `npm create` start a bin through a symlink (node_modules/.bin/create-block → dist/index.js).
+	test('runs when started through a symlink to the entry file', (t) => {
+		const result = helpThroughSymlink(t, join(distDir, 'index.js'), 'file', 'create-block', 'create-block');
+		if (!result) return;
+		assert.strictEqual(result.status, 0, result.stderr);
+		assert.match(result.stdout, /Usage:\n {2}npm create @aws-cdk-blocks\/block@latest <ClassName>/);
+	});
+
+	test('runs when the path to the entry file contains a symlinked directory', (t) => {
+		const result = helpThroughSymlink(t, distDir, 'junction', 'linked-dist', join('linked-dist', 'index.js'));
+		if (!result) return;
+		assert.strictEqual(result.status, 0, result.stderr);
+		assert.match(result.stdout, /Usage:\n {2}npm create @aws-cdk-blocks\/block@latest <ClassName>/);
 	});
 });

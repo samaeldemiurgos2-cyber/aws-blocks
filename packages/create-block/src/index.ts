@@ -5,10 +5,11 @@
 
 import { execFileSync, execSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { access, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 /** Templates ship next to the built CLI (packages/create-block/templates). */
@@ -954,12 +955,23 @@ function printNextSteps(mode: Mode, names: DerivedNames, targetRel: string): voi
 	}
 }
 
-// Only execute when invoked as the CLI (not when imported by tests).
-if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
-	run(process.argv.slice(2), process.cwd())
-		.then((code) => process.exit(code))
-		.catch((e) => {
-			console.error(e);
-			process.exit(1);
-		});
+// Run the CLI only when this module is the entry point (not when imported by tests).
+// Resolve argv[1] through its real path first: npm starts a bin through a symlink
+// (node_modules/.bin/create-block), while import.meta.url names the real file.
+const entryArg = process.argv[1];
+if (entryArg) {
+	let entryUrl: string;
+	try {
+		entryUrl = pathToFileURL(realpathSync(entryArg)).href;
+	} catch {
+		entryUrl = pathToFileURL(entryArg).href;
+	}
+	if (import.meta.url === entryUrl) {
+		run(process.argv.slice(2), process.cwd())
+			.then((code) => process.exit(code))
+			.catch((e) => {
+				console.error(e);
+				process.exit(1);
+			});
+	}
 }
