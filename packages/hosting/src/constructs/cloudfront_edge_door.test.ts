@@ -165,7 +165,13 @@ type Behavior = {
 const edgeFor = (
   id: string,
   p: HostingPlan,
-  opts: { image?: boolean; server?: boolean; apiPaths?: string[]; staticDir?: string } = {},
+  opts: {
+    image?: boolean;
+    server?: boolean;
+    apiPaths?: string[];
+    staticDir?: string;
+    errorPages?: { notFound?: string; serverError?: string };
+  } = {},
 ) => {
   const stack = new Stack(new App(), id, { env: { account: '111111111111', region: 'us-east-1' } });
   const bucket = new Bucket(stack, 'Assets');
@@ -177,6 +183,7 @@ const edgeFor = (
     plan: p,
     bucket,
     staticDir: opts.staticDir ?? '.',
+    ...(opts.errorPages ? { errorPages: opts.errorPages } : {}),
     ...(server ? { server: { fn: server, streaming: false } } : {}),
     ...(image ? { image: { fn: image, url: image.addFunctionUrl({ authType: FunctionUrlAuthType.AWS_IAM }) } } : {}),
     api: { url: 'https://abc123.execute-api.us-east-1.amazonaws.com/prod/cdk-blocks/api', paths: opts.apiPaths },
@@ -298,6 +305,36 @@ describe('cloudFrontEdgeDoor — behaviors, caching, rules', () => {
     assert.ok(!behaviors.some((b) => b.PathPattern?.startsWith('/hook')));
     assert.ok(behaviors.every((b) => b.TargetOriginId === s3Id));
     assert.equal(Annotations.fromStack(stack).findWarning('*', Match.stringLikeRegexp('StackedEdgeBehaviorLimit')).length, 1);
+  });
+
+  it('over the budget, single-file S3 routes give way before an S3 prefix, last first', () => {
+    const entries: HostingPlan['routes']['entries'] = [
+      ...Array.from({ length: 30 }, (_, i) => ({ pattern: `/file-${String(i).padStart(2, '0')}.txt`, kind: 'static' as const })),
+      { pattern: '/assets/*', kind: 'static' },
+      { pattern: '/*', kind: 'server' },
+    ];
+    const { config, behaviors, s3Id } = edgeFor('BudgetPrefix', serverPlan(entries), { server: true });
+    assert.equal(behaviors.length, 24);
+    assert.equal(behaviors.find((b) => b.PathPattern === '/assets/*')?.TargetOriginId, s3Id, 'the prefix keeps its S3 behavior');
+    const files = behaviors.filter((b) => b.PathPattern?.startsWith('/file-')).map((b) => b.PathPattern);
+    assert.deepEqual(files, Array.from({ length: 23 }, (_, i) => `/file-${String(i).padStart(2, '0')}.txt`), 'the first files keep theirs, in order');
+    assert.notEqual(config.DefaultCacheBehavior.TargetOriginId, s3Id, 'the router default serves the rest');
+  });
+
+  it("over the budget, the error pages keep their S3 behaviors (they are not single files that give way)", () => {
+    const entries: HostingPlan['routes']['entries'] = [
+      ...Array.from({ length: 24 }, (_, i) => ({ pattern: `/p${i}/*`, kind: 'static' as const })),
+      { pattern: '/*', kind: 'server' },
+    ];
+    const { config, behaviors, s3Id } = edgeFor('BudgetErrors', serverPlan(entries), {
+      server: true,
+      errorPages: { notFound: './404.html', serverError: './500.html' },
+    });
+    assert.equal(behaviors.length, 24);
+    for (const page of ['/builds/b42/404.html', '/builds/b42/500.html']) {
+      assert.equal(behaviors.find((b) => b.PathPattern === page)?.TargetOriginId, s3Id, `${page} keeps its S3 behavior`);
+      assert.ok(config.CustomErrorResponses?.some((e) => e.ResponsePagePath === page));
+    }
   });
 
   it('an API path a kept S3 pattern could shadow keeps its (uncached) behavior ahead of it', () => {
