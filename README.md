@@ -14,7 +14,7 @@ Select the CDK Blocks your app needs and compose them. Your app runs locally wit
 
 Platform teams can package their own standards as custom CDK Blocks and share them through npm. To create a custom CDK Block, see [`create-block`](./packages/create-block/README.md).
 
-> **Documentation:** [Developer Guide](https://docs.aws.amazon.com/blocks/latest/devguide/what-is-blocks.html)
+> **Documentation:** [Developer Guide](https://docs.aws.amazon.com/cdk/blocks/devguide/what-is-blocks.html)
 
 ## Getting started
 
@@ -34,7 +34,7 @@ Define your backend in `cdk-blocks/index.ts` and your frontend in `src/`. Your f
 - **Templates:** To start from a different template, add `-- --template <name>` to the `npm create` command. To see the templates, run `npx @aws-cdk-blocks/create-blocks-app --help`.
 - **Existing projects:** To add a `cdk-blocks/` backend to an existing project, run the `npm create` command in the project directory. Omit the directory name, or use `.`. If the project is an AWS Amplify Gen 2 project, the CLI finds it and integrates with it.
 
-For the full procedure, see the [Getting started guide](https://docs.aws.amazon.com/blocks/latest/devguide/getting-started.html).
+For the full procedure, see the [Getting started guide](https://docs.aws.amazon.com/cdk/blocks/devguide/getting-started.html).
 
 ## How it works
 
@@ -61,7 +61,7 @@ Each CDK Block is an npm package. The umbrella package [`aws-cdk-blocks`](https:
 | Observability | `Logger`, `Metrics`, `Tracer`, `Dashboard` |
 | Hosting | `Hosting` |
 
-For the full catalog and the API reference of each Block, see the [Developer Guide](https://docs.aws.amazon.com/blocks/latest/devguide/what-is-blocks.html).
+For the full catalog and the API reference of each Block, see the [Developer Guide](https://docs.aws.amazon.com/cdk/blocks/devguide/what-is-blocks.html).
 
 ## Supported platforms
 

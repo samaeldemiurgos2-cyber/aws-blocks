@@ -1,7 +1,7 @@
 name: blocks_runtime_flutter
 description: Flutter-specific implementations for blocks_runtime (secure storage, OAuth browser flow)
 version: 1.0.0
-homepage: https://docs.aws.amazon.com/blocks/latest/devguide
+homepage: https://docs.aws.amazon.com/cdk/blocks/devguide
 repository: https://github.com/aws-devtools-labs/aws-blocks
 issue_tracker: https://github.com/aws-devtools-labs/aws-blocks/issues
 
