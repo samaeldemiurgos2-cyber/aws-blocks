@@ -546,7 +546,7 @@ new RawRoute(scope, 'user', {
 // GET /users/42?q=hello → {"id":"42","q":"hello"}
 ```
 
-Path syntax: exact (`/health`), named parameter capturing one segment (`/users/{id}`), or a trailing wildcard capturing the rest (`/files/*`, available as `params['*']`). One wildcard per route, last segment only. Named parameters are URL-decoded; wildcard captures are not, so validate them before touching a filesystem or an S3 key.
+Path syntax: exact (`/health`), named parameter capturing one segment (`/users/{id}`), or a trailing wildcard capturing the rest (`/files/*`, available as `params['*']`). One wildcard per route, last segment only. A route can't be registered at the root, and the root path (`/`) matches no route, not even `/*`: it answers `404`. Named parameters are URL-decoded; wildcard captures are not, so validate them before touching a filesystem or an S3 key.
 
 To sub-route under a wildcard, match on `params['*']` (or `url.pathname`, which is the same path in every environment) rather than on a full URL.
 
