@@ -15,7 +15,7 @@ import type { AddressInfo } from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { after, before, describe, it } from 'node:test';
+import { after, afterEach, before, beforeEach, describe, it } from 'node:test';
 import { Duration, Lazy } from 'aws-cdk-lib';
 import type { ComputeResource } from '../manifest/types.js';
 import { HostingError } from '../hosting_error.js';
@@ -33,7 +33,13 @@ import {
 } from './ssr_cache_guard.js';
 
 type RequestInfo = { authorization: boolean; cookies: string[] };
-type ResponseInfo = { cacheControl: string | undefined; expires?: string; setCookie: boolean; statusCode?: number };
+type ResponseInfo = {
+  cacheControl: string | undefined;
+  expires?: string;
+  setCookie: boolean;
+  statusCode?: number;
+  vary?: string;
+};
 type Headers = Record<string, string | string[]>;
 type LambdaResult = {
   statusCode?: number;
@@ -70,11 +76,18 @@ after(() => fs.rmSync(tmpRoot, { recursive: true, force: true }));
 const anon: RequestInfo = { authorization: false, cookies: [] };
 const shared = { cacheControl: 'public, s-maxage=300, max-age=0', setCookie: false };
 
+/** The CloudFront door's guard config: the router headers and `x-tenant` are in the cache key. */
+const CLOUDFRONT_DOOR = {
+  cacheKeyCookies: ['bb_session'],
+  varyKeyedHeaders: ['rsc', 'next-router-prefetch', 'next-router-state-tree', 'next-router-segment-prefetch', 'X-Tenant'],
+};
+
 void describe('guardCacheControl', () => {
   let guard: GuardModule;
   let keyed: GuardModule;
   before(async () => {
-    guard = await load<GuardModule>({ cacheKeyCookies: ['bb_session'] });
+    // Loaded first, so its writeHead patch is the one the HTTP server tests use.
+    guard = await load<GuardModule>(CLOUDFRONT_DOOR);
     keyed = await load<GuardModule>({ cacheKeyCookies: ['bb_session'], cacheKeyHeaders: ['Authorization'] });
   });
 
@@ -199,6 +212,103 @@ void describe('guardCacheControl', () => {
     for (const cacheControl of ['private', 'no-store', 'no-cache']) {
       assert.equal(guard.guardCacheControl(request, { cacheControl, expires: future, setCookie: false }), null, cacheControl);
     }
+  });
+});
+
+void describe('guardCacheControl: Vary', () => {
+  let guard: GuardModule;
+  let noCdn: GuardModule;
+  let warnings: string[];
+  const warn = console.warn;
+  before(async () => {
+    guard = await load<GuardModule>(CLOUDFRONT_DOOR);
+    noCdn = await load<GuardModule>({ cacheKeyCookies: ['bb_session'] });
+  });
+  beforeEach(() => {
+    warnings = [];
+    console.warn = (...args: unknown[]) => void warnings.push(args.map(String).join(' '));
+  });
+  afterEach(() => {
+    console.warn = warn;
+  });
+
+  void it('makes a shared-cacheable response that varies on a header outside the cache key private, for any request', () => {
+    const response = { ...shared, vary: 'Accept-Language' };
+    assert.equal(guard.guardCacheControl(anon, response), PRIVATE);
+    assert.equal(guard.guardCacheControl(null, response), PRIVATE);
+    assert.equal(guard.guardCacheControl(anon, { ...shared, vary: 'accept-encoding, Origin' }), PRIVATE);
+    assert.equal(guard.guardCacheControl(anon, { cacheControl: 'max-age=60', setCookie: false, vary: 'Accept' }), PRIVATE);
+  });
+
+  void it('treats Vary: * as never shared-cacheable', () => {
+    assert.equal(guard.guardCacheControl(anon, { ...shared, vary: '*' }), PRIVATE);
+  });
+
+  void it('leaves a response that varies only on Accept-Encoding and cache-key headers alone (any case)', () => {
+    for (const vary of [
+      'Accept-Encoding',
+      'RSC, Next-Router-State-Tree, Next-Router-Prefetch, Next-Router-Segment-Prefetch, Accept-Encoding',
+      'x-tenant',
+      '',
+    ]) {
+      assert.equal(guard.guardCacheControl(anon, { ...shared, vary }), null, vary);
+    }
+  });
+
+  void it('leaves a response that is not shared-cacheable alone, whatever it varies on', () => {
+    for (const cacheControl of ['private, max-age=60', 'no-store', 'no-cache', undefined]) {
+      assert.equal(guard.guardCacheControl(anon, { cacheControl, setCookie: false, vary: 'X-Not-Cacheable' }), null);
+    }
+    assert.deepEqual(warnings, []);
+  });
+
+  void it('leaves Vary: Cookie to the cookie rule (CloudFront door)', () => {
+    for (const vary of ['Cookie', 'Accept-Encoding, Cookie']) {
+      assert.equal(guard.guardCacheControl(anon, { ...shared, vary }), null, vary);
+      assert.equal(guard.guardCacheControl(null, { ...shared, vary }), null, vary);
+      assert.equal(guard.guardCacheControl({ authorization: false, cookies: ['bb_session'] }, { ...shared, vary }), null);
+      assert.equal(guard.guardCacheControl({ authorization: false, cookies: ['theme'] }, { ...shared, vary }), PRIVATE);
+    }
+    assert.deepEqual(warnings, []);
+  });
+
+  void it('never rewrites Vary: Cookie when the key holds every cookie (stacked door)', async () => {
+    const stacked = await load<GuardModule>({
+      allCookiesKeyed: true,
+      varyKeyedHeaders: ['rsc', 'next-router-prefetch', 'next-router-state-tree', 'next-router-segment-prefetch', 'next-action', 'next-url'],
+    });
+    for (const vary of ['Cookie', 'Accept-Encoding, Cookie', 'RSC, Next-Url, Cookie']) {
+      assert.equal(stacked.guardCacheControl(anon, { ...shared, vary }), null, vary);
+      assert.equal(stacked.guardCacheControl({ authorization: false, cookies: ['theme'] }, { ...shared, vary }), null, vary);
+    }
+    assert.equal(stacked.guardCacheControl(anon, { ...shared, vary: 'Cookie, X-Stacked-Only' }), PRIVATE);
+    assert.equal(warnings.length, 1, warnings.join('\n'));
+    assert.match(warnings[0], /varies on 'x-stacked-only'/);
+  });
+
+  void it('does not read Vary when no CDN cache key is known (ALB, API Gateway, custom door)', () => {
+    assert.equal(noCdn.guardCacheControl(anon, { ...shared, vary: 'Accept-Language' }), null);
+    assert.equal(noCdn.guardCacheControl(anon, { ...shared, vary: '*' }), null);
+  });
+
+  void it('logs once per header name why it rewrote a response', () => {
+    guard.guardCacheControl(anon, { ...shared, vary: 'X-Region' });
+    guard.guardCacheControl(anon, { ...shared, vary: 'x-region' });
+    guard.guardCacheControl(anon, { ...shared, vary: 'X-Region, X-Device' });
+    assert.equal(warnings.length, 2, warnings.join('\n'));
+    assert.match(warnings[0], /varies on 'x-region'.*private, no-store/);
+    assert.match(warnings[1], /varies on 'x-device'/);
+  });
+
+  void it('reads Vary from a buffered result and keeps it for the browser', () => {
+    const result = guard.guardResult(
+      { statusCode: 200, headers: { 'Cache-Control': 's-maxage=60' }, multiValueHeaders: { Vary: ['Accept-Language'] } },
+      anon,
+    );
+    assert.deepEqual(result.headers, { 'cache-control': PRIVATE });
+    assert.deepEqual(result.multiValueHeaders, { Vary: ['Accept-Language'] });
+    const keyedOnly = guard.guardResult({ statusCode: 200, headers: { 'cache-control': 's-maxage=60', vary: 'Accept-Encoding' } }, anon);
+    assert.deepEqual(keyedOnly.headers, { 'cache-control': 's-maxage=60', vary: 'Accept-Encoding' });
   });
 });
 
@@ -857,8 +967,8 @@ void describe('Node HTTP server (writeHead)', () => {
   let base: string;
   before(async () => {
     // The writeHead patch installs once per process, with the first loaded
-    // module's config (every config in this file keys on bb_session).
-    await load({ cacheKeyCookies: ['bb_session'] });
+    // module's config (CLOUDFRONT_DOOR, loaded by the first describe).
+    await load(CLOUDFRONT_DOOR);
     server = http.createServer((req, res) => {
       if (req.url === '/set-header') {
         res.setHeader('Cache-Control', 'public, s-maxage=300');
@@ -891,6 +1001,25 @@ void describe('Node HTTP server (writeHead)', () => {
         res.setHeader('Cache-Control', 'private, max-age=600');
         res.setHeader('Set-Cookie', 'v=1; Path=/');
         res.end('h');
+      } else if (req.url === '/vary') {
+        res.setHeader('Cache-Control', 'public, s-maxage=20');
+        res.setHeader('Vary', 'Accept-Language');
+        res.end('i');
+      } else if (req.url === '/vary-write-head') {
+        res.writeHead(200, { 'cache-control': 'public, s-maxage=20', vary: 'Accept-Encoding, X-Device' });
+        res.end('j');
+      } else if (req.url === '/vary-overridden') {
+        // Node sends the writeHead Vary, not the one set before it.
+        res.setHeader('Vary', 'X-Overridden');
+        res.writeHead(200, { 'cache-control': 'public, s-maxage=20', vary: 'Accept-Encoding' });
+        res.end('l');
+      } else if (req.url === '/vary-set-header-only') {
+        res.setHeader('Vary', 'X-Set-Header-Only');
+        res.writeHead(200, { 'cache-control': 'public, s-maxage=20' });
+        res.end('m');
+      } else if (req.url === '/vary-keyed') {
+        res.writeHead(200, { 'cache-control': 'public, s-maxage=20', vary: 'RSC, Accept-Encoding' });
+        res.end('k');
       } else if (req.url === '/set-cookie') {
         res.setHeader('Cache-Control', 'public, s-maxage=300');
         res.setHeader('Set-Cookie', 'v=1; Path=/');
@@ -952,6 +1081,39 @@ void describe('Node HTTP server (writeHead)', () => {
 
   void it('leaves an already-private response alone', async () => {
     assert.equal((await get('/private', { cookie: 'theme=dark' })).headers.get('cache-control'), 'private, max-age=60');
+  });
+
+  void it('makes a shared-cacheable response that varies on a header outside the cache key private, keeping Vary', async () => {
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      const res = await get('/vary', { 'accept-language': 'fr-FR' });
+      assert.equal(res.headers.get('cache-control'), PRIVATE);
+      assert.equal(res.headers.get('vary'), 'Accept-Language');
+      const head = await get('/vary-write-head');
+      assert.equal(head.headers.get('cache-control'), PRIVATE);
+      assert.equal(head.headers.get('vary'), 'Accept-Encoding, X-Device');
+      assert.equal((await get('/vary-keyed')).headers.get('cache-control'), 'public, s-maxage=20');
+    } finally {
+      console.warn = warn;
+    }
+  });
+
+  void it('reads the Vary Node sends: the writeHead one when given, else the one set before', async () => {
+    const warnings: string[] = [];
+    const warn = console.warn;
+    console.warn = (...args: unknown[]) => void warnings.push(args.map(String).join(' '));
+    try {
+      const overridden = await get('/vary-overridden');
+      assert.equal(overridden.headers.get('vary'), 'Accept-Encoding');
+      assert.equal(overridden.headers.get('cache-control'), 'public, s-maxage=20');
+      const setOnly = await get('/vary-set-header-only');
+      assert.equal(setOnly.headers.get('vary'), 'X-Set-Header-Only');
+      assert.equal(setOnly.headers.get('cache-control'), PRIVATE);
+    } finally {
+      console.warn = warn;
+    }
+    assert.ok(!warnings.some((w) => w.includes('x-overridden')), warnings.join('\n'));
   });
 });
 

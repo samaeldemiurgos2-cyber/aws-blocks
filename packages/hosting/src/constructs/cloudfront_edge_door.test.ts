@@ -245,6 +245,22 @@ describe('cloudFrontEdgeDoor — behaviors, caching, rules', () => {
     assert.equal(server.MaxTTL, 86400);
   });
 
+  it("a server route's cache key: every cookie and the whole query string, no request header (what the SSR cache guard assumes)", () => {
+    // The hosting construct's SSR cache guard treats every cookie, and the Next.js router
+    // headers (carried in the query string as `_rsc`), as keyed behind this door; a change
+    // here must change that guard config too.
+    const { t, config } = edgeFor('SrvKey', serverPlan([{ pattern: '/*', kind: 'server' }]), { server: true });
+    const policies = t.findResources('AWS::CloudFront::CachePolicy');
+    const key = policies[(config.DefaultCacheBehavior.CachePolicyId as { Ref: string }).Ref]?.Properties.CachePolicyConfig
+      .ParametersInCacheKeyAndForwardedToOrigin;
+    assert.ok(key, 'server-route cache policy present');
+    assert.equal(key.CookiesConfig.CookieBehavior, 'all');
+    assert.equal(key.QueryStringsConfig.QueryStringBehavior, 'all');
+    assert.equal(key.HeadersConfig.HeaderBehavior, 'none');
+    assert.equal(key.EnableAcceptEncodingGzip, true);
+    assert.equal(key.EnableAcceptEncodingBrotli, true);
+  });
+
   it("a server's 5xx is never cached; a site without a server keeps the default error caching", () => {
     const { config } = edgeFor('SrvErr', serverPlan([{ pattern: '/*', kind: 'server' }]), { server: true });
     const errors = (config.CustomErrorResponses ?? []) as Array<{ ErrorCode: number; ErrorCachingMinTTL?: number; ResponsePagePath?: string }>;

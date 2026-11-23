@@ -1116,13 +1116,43 @@ are cached as its `Cache-Control` says. The guard sends
   and the response is shared-cacheable: `s-maxage`, `public`, `max-age` without
   `private`, a future `Expires`, no caching headers while `ssrDefaultTtl > 0`,
   or an error status CloudFront caches without caching headers (404, 414 and
-  500 to 504).
+  500 to 504); or
+- behind the CloudFront door or the stacked door, the response is
+  shared-cacheable and its `Vary` names a request header that the server-route
+  cache key does not hold, or is `Vary: *`. CloudFront ignores `Vary`, so it
+  would store one copy and serve it for every value of that header (for
+  example a page rendered from `Accept-Language`, served in the first
+  visitor's language to everyone). `Accept-Encoding` is always in the key.
+  The Next.js router headers (`RSC`, `Next-Router-State-Tree`,
+  `Next-Router-Prefetch`, `Next-Router-Segment-Prefetch`, `Next-Action`) count
+  as keyed too: the CloudFront door's key holds them as request headers, and
+  the stacked door's holds the query string, whose `_rsc` parameter Next.js
+  derives from them and `Next-Url`. On the CloudFront door `cacheKeyHeaders`
+  are keyed as well. `Vary: Cookie` alone never leads to a rewrite: cookies
+  follow the cookie rule above (and are all in the key behind the stacked
+  door). The response keeps its `Vary`
+  header for the browser, and the server logs once per header name why the
+  guard rewrote it. The ALB, API Gateway and custom doors put no CloudFront
+  cache the guard knows in front of the server, so `Vary` is not read there.
 
 Responses that are already `private`/`no-store`, or `no-cache` without
 `s-maxage`, are left as they are. To keep a credentialed route cacheable, list
 its credential in `cacheKeyCookies`/`cacheKeyHeaders` so the cache is keyed per
 credential. Any route that otherwise varies per user should still emit
 `Cache-Control: private`.
+
+To edge-cache a route that varies on a request header, add the header to the
+cache key on the CloudFront door, so one copy is cached per value:
+
+```ts
+frontDoor: { features: { cacheKeyHeaders: ['accept-language'] } }
+```
+
+Behind the stacked door the server-route cache key holds no request headers
+(only the query string, the Next.js `_rsc` parameter included, and every
+cookie), so a route that varies on a header other than `Accept-Encoding`,
+`Cookie` or the Next.js router headers is sent as `private, no-store`; put the
+value in the path or the query string to cache it.
 
 Client-side analytics and consent cookies (`_ga`, `_gid`, `_fbp`, a consent
 manager's cookie) are not in the cache key, so by default a visitor carrying one
@@ -1137,8 +1167,8 @@ frontDoor: { features: { cacheKeyCookies: ['session'], cacheGuardIgnoredCookies:
 ```
 
 Behind the stacked door the server-route cache key holds every
-cookie, so cookies never lead to a rewrite there; `Authorization` and
-`Set-Cookie` still do.
+cookie, so cookies (and `Vary: Cookie`) never lead to a rewrite there;
+`Authorization`, `Set-Cookie` and a `Vary` header outside the key still do.
 
 CloudFront caches the 500, 501, 502, 503 and 504 responses of an origin for the
 error caching minimum TTL and, except for 501, does so whatever their
@@ -1147,8 +1177,9 @@ stacked door) therefore sets that TTL to 0 for those statuses,
 keeping any error page configured for them.
 
 The guard models CloudFront's own caching inputs only: `CDN-Cache-Control` and
-`Surrogate-Control` are not CloudFront TTL inputs, and CloudFront ignores `Vary`
-for the cache key, so the guard does not read them.
+`Surrogate-Control` are not CloudFront TTL inputs, so the guard does not read
+them. It reads `Vary` only to find responses CloudFront would share across
+values of a header outside the key (above); it never adds a header to the key.
 
 CloudFront uses `max-age` as its edge TTL when `s-maxage` is absent, so a bare
 `max-age` is cached at the edge and counts as shared-cacheable. A credentialed
