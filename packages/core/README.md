@@ -607,6 +607,8 @@ The `framework` option selects the frontend type: `'spa' | 'static' | 'nextjs'`.
 
 `buildRetentionDays` (default 30) is how many days superseded builds are kept for rollback. It maps to the hosting construct's `storage.buildRetentionDays` and must be ≥ `skewProtection.maxAge` in days. The [`@aws-cdk-blocks/hosting` README](../hosting/README.md) has the retention and cleanup rules.
 
+**The Lambda@Edge stack.** An app with Lambda@Edge functions (a Next.js `runtime: 'edge'` route, or middleware built as Lambda@Edge) in a stack outside `us-east-1` gets a second stack in `us-east-1` that holds them. CDK names it `edge-lambda-stack-<hash>`, a name that doesn't say which app it belongs to; with `defaults.appIdentity` set, `Hosting` names it `<id>-edge` (see [Running many apps in one AWS account](#running-many-apps-in-one-aws-account-a-shared-platform)). `NODE_OPTIONS="--conditions=cdk" npx cdk ls` lists it with the app's stacks, and `npm run sandbox:destroy` deletes it with the sandbox. `npm run destroy` doesn't select stacks, so delete a production app's stacks by name, the app stack first; the `@aws-cdk-blocks/hosting` README's "Edge routes" section has the steps.
+
 ### Front door and its settings
 
 `frontDoor` picks the public entry point:

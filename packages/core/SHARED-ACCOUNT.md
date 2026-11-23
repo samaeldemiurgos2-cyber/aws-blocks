@@ -876,7 +876,7 @@ CDK's default bootstrap deploy role may change or delete *any* stack, and CloudF
 
 Attaching it to the existing deploy role (`cdk-<id>-deploy-role-<account>-<region>`) works, but it's drift outside CloudFormation that a re-bootstrap won't restore, and it leaves `sts:TagSession` in place.
 
-**Lambda@Edge (Hosting outside `us-east-1`).** CDK hoists edge functions into a `us-east-1` stack; with `defaults.appIdentity` set, AWS CDK Blocks names it `<id>-edge`, so the guard and the execution policy treat it as the app's own. Bootstrap the app in `us-east-1` too (same qualifier, same `app` tag, same execution policy) and attach the guard there.
+**Lambda@Edge (Hosting outside `us-east-1`).** CDK hoists edge functions into a `us-east-1` stack; with `defaults.appIdentity` set, AWS CDK Blocks names it `<id>-edge`, so the guard and the execution policy treat it as the app's own. Without `appIdentity` it keeps CDK's name, `edge-lambda-stack-<hash>`, which a guard keyed on the stack name prefix can't attribute to the app (the hosting README's "Edge routes" section shows how to find and delete it). Bootstrap the app in `us-east-1` too (same qualifier, same `app` tag, same execution policy) and attach the guard there.
 
 ## The pipeline
 
