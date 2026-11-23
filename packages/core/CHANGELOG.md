@@ -2,6 +2,12 @@
 
 <!-- doc-snippet: skip-file — release notes show the API of past releases, including the removed AuthOIDC block -->
 
+## 1.0.1
+
+### Patch Changes
+
+- 8832b3c: The unit tests of both packages no longer send usage events. They run with the CDK CLI telemetry opt-out set, and the telemetry tests that turn telemetry back on point it at a local endpoint. No change to the published packages.
+
 ## 1.0.0
 
 The first stable release. The changes since 1.0.0-rc.2 are listed below. The notes for every other change since 0.x are under 1.0.0-rc.0, 1.0.0-rc.1 and 1.0.0-rc.2.
