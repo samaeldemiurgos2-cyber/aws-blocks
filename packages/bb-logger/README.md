@@ -49,6 +49,13 @@ All log methods are **synchronous** (no await needed).
 | `level` | `'debug' \| 'info' \| 'warn' \| 'error'` | `'info'` | Minimum log level; entries below it are dropped. Set only here: there is no `LOG_LEVEL` env var |
 | `defaultContext` | `Record<string, unknown>` | `{}` | Fields included in every log entry. The entry's own keys (`level`, `message`, `timestamp`, `logger`, `traceId`, `awsRequestId`) are reserved: a context value under one of them is ignored |
 
+A `level` read from config (an env var, a JSON file) is checked when the `Logger` is created:
+
+- It is trimmed and matched case-insensitively, so `'WARN'` and `' warn '` work. `undefined`, `null` and `''` mean "not set" and use `'info'`.
+- The aliases `'warning'`, `'trace'` and `'fatal'` are accepted as `'warn'`, `'debug'` and `'error'`, with no warning.
+- Any other value, such as `'verbose'`, falls back to `'info'`. The logger writes one `warn` line naming the value it got (`configuredLevel`) and carrying its `defaultContext`, so a typo never silences the logger.
+- Under `cdk synth`, an unknown value is also reported as the CDK warning `@aws-cdk-blocks/bb-logger:unknownLevel`, which fails `cdk synth --strict`. Acknowledge the warning by that id if you want `--strict` to pass anyway.
+
 Log retention is not a Logger option — it is a compute-level setting (see [Retention](#retention-production) below).
 
 ### Log Entry Format
