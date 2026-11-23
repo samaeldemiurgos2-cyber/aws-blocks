@@ -43,7 +43,7 @@
   "scripts": {
     "prebuild": "node ../../scripts/generate-version.mjs CronJob",
     "build": "tsc --build",
-    "test": "node --test --test-force-exit dist/index.mock.test.js dist/schedule.test.js dist/schedule-validate.test.js && node --conditions=cdk --test --test-force-exit dist/index.cdk.test.js && node --conditions=aws-runtime --test --test-force-exit dist/index.aws.test.js"
+    "test": "node --test --test-force-exit dist/index.mock.test.js dist/schedule.test.js dist/schedule-validate.test.js dist/parity.test.js && node --conditions=cdk --test --test-force-exit dist/index.cdk.test.js && node --conditions=aws-runtime --test --test-force-exit dist/index.aws.test.js"
   },
   "dependencies": {
     "@aws-cdk-blocks/bb-async-job": "^1.0.0",

@@ -147,9 +147,15 @@ function parseRate(rateMatch: RegExpMatchArray, expr: string): number {
  * false negatives (see DESIGN.md D-CJ-4):
  * - `rate(...)`: fully validated (unit ∈ minute/hour/day, plural agreement, value ≥ 1)
  *   — this is where `rate(10 seconds)` and friends are caught.
- * - `cron(...)`: only the **6-field shape** is checked; field-level semantics
- *   (`L`/`W`/`#`, year ranges, named days) are left to EventBridge, since the mock
- *   models only a subset and gating on it would reject valid schedules.
+ * - `cron(...)`: the **6-field shape** is checked, plus two rules that hold for every
+ *   EventBridge cron: exactly one of day-of-month and day-of-week is `?`, and a
+ *   plain numeric day-of-month must exist in at least one listed month (no Feb 30).
+ *   Other field-level semantics (`L`/`W`/`#`, year ranges, named days) are left to
+ *   EventBridge, since the mock models only a subset and gating on it would reject
+ *   valid schedules.
+ *
+ * The mock, the CDK layer and the AWS runtime all call this, so a schedule is
+ * accepted or rejected the same way in local dev, at synth and in Lambda.
  */
 export function validateSchedule(expr: string): void {
 	const rateMatch = expr.match(RATE_RE);
@@ -160,14 +166,55 @@ export function validateSchedule(expr: string): void {
 	const cronMatch = expr.match(CRON_RE);
 	if (cronMatch) {
 		// AWS/EventBridge cron is 6 fields: minute hour day-of-month month day-of-week year.
-		if (cronMatch[1].trim().split(/\s+/).length !== 6) throw scheduleError(expr);
+		const fields = cronMatch[1].trim().split(/\s+/);
+		if (fields.length !== 6) throw scheduleError(expr);
+		const [, , dom, month, dow] = fields;
+		// EventBridge rejects a cron that sets both day fields (`* * MON`) or neither (`? * ?`).
+		if ((dom === '?') === (dow === '?')) {
+			throw blocksError(
+				CronJobErrors.InvalidSchedule,
+				`"${expr}" is not a valid schedule — exactly one of day-of-month (3rd field) and day-of-week (5th field) must be "?"`,
+			);
+		}
+		if (dayOfMonthNeverExists(dom, month, expr)) {
+			throw blocksError(
+				CronJobErrors.InvalidSchedule,
+				`"${expr}" is not a valid schedule — day-of-month "${dom}" does not exist in month "${month}", so it would never run`,
+			);
+		}
 		return;
 	}
 	throw scheduleError(expr);
 }
 
+/** Longest each month can be, with February at its leap-year length (so Feb 29 is allowed). */
+const MAX_DAYS_IN_MONTH = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+/**
+ * True when every listed day-of-month is past the end of every listed month (e.g.
+ * `30 2` or `31 4,6`). Only plain numeric day fields are checked: `?`, `*`, `L`, `W`
+ * and fields this parser can't expand are left to EventBridge, so a schedule it
+ * would accept is never rejected here.
+ */
+function dayOfMonthNeverExists(dom: string, month: string, expr: string): boolean {
+	if (dom === '?' || dom === '*' || /[LW#]/i.test(dom)) return false;
+	let days: number[];
+	let months: number[];
+	try {
+		days = expandField(dom, 1, 31, expr);
+		months = expandMonth(month, expr);
+	} catch {
+		return false;
+	}
+	return !months.some((m) => days.some((d) => d <= MAX_DAYS_IN_MONTH[m - 1]));
+}
+
 /** Throw `CronJobErrors.InvalidTimezone` if `tz` is not a valid IANA timezone. */
 export function validateTimezone(tz: string): void {
+	// `Intl` already throws for '' and whitespace; kept so the error stays explicit on any engine that treats '' as the default zone.
+	if (tz.trim() === '') {
+		throw blocksError(CronJobErrors.InvalidTimezone, `"${tz}" is not a valid IANA timezone`);
+	}
 	try {
 		Intl.DateTimeFormat('en-US', { timeZone: tz });
 	} catch {

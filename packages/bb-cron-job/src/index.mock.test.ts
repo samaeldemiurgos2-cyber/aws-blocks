@@ -3,7 +3,8 @@
 
 import assert from 'node:assert';
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
-import { CronJob } from './index.mock.js';
+import { isBlocksError } from '@aws-cdk-blocks/core';
+import { CronJob, CronJobErrors } from './index.mock.js';
 
 const fakeScope = {
 	_id: 'test',
@@ -142,16 +143,16 @@ describe('CronJob mock – schedules that cannot match', () => {
 		mock.restoreAll();
 	});
 
-	test('a schedule with no real date warns that it will never fire', () => {
-		const warn = mock.method(console, 'warn', () => {});
+	test('a schedule with no real date is rejected, as at synth', () => {
 		mock.method(console, 'log', () => {});
-		new CronJob(fakeScope, 'feb-30', {
-			schedule: 'cron(0 0 30 2 ? *)',
-			handler: async () => {},
-		});
-
-		assert.strictEqual(warn.mock.callCount(), 1);
-		assert.match(String(warn.mock.calls[0].arguments[0]), /never fire/);
+		assert.throws(
+			() =>
+				new CronJob(fakeScope, 'feb-30', {
+					schedule: 'cron(0 0 30 2 ? *)',
+					handler: async () => {},
+				}),
+			(e: unknown) => isBlocksError(e, CronJobErrors.InvalidSchedule),
+		);
 	});
 
 	test('a leap-day schedule only logs that it is checking again later', () => {

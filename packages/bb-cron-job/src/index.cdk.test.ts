@@ -126,6 +126,29 @@ describe('CronJob synth-time schedule validation', () => {
 		);
 	});
 
+	// EventBridge rejects these at deploy; synth must reject them first.
+	for (const [label, schedule] of [
+		['both day fields set', 'cron(0 12 * * MON *)'],
+		['neither day field set', 'cron(0 0 ? * ? *)'],
+		['Feb 30', 'cron(0 0 30 2 ? *)'],
+	]) {
+		test(`rejects a cron with ${label} at synth (${schedule})`, async () => {
+			const stack = await makeStack(`CronInvalidDays${label.replace(/\W/g, '')}`);
+			assert.throws(
+				() => new CronJob(stack, 'job', { schedule, handler: async () => {} }),
+				(e: unknown) => isBlocksError(e, CronJobErrors.InvalidSchedule),
+			);
+		});
+	}
+
+	test('rejects an empty timezone at synth', async () => {
+		const stack = await makeStack('CronEmptyTz');
+		assert.throws(
+			() => new CronJob(stack, 'job', { schedule: 'rate(5 minutes)', timezone: '', handler: async () => {} }),
+			(e: unknown) => isBlocksError(e, CronJobErrors.InvalidTimezone),
+		);
+	});
+
 	test('rejects an invalid timezone at synth', async () => {
 		const stack = await makeStack('CronInvalidTz');
 		assert.throws(

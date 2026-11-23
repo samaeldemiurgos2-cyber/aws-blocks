@@ -19,6 +19,10 @@ describe('validateSchedule (synth-time guard)', () => {
 		'cron(0 9 ? * MON#1 *)', // named nth weekday
 		'cron(0 0 1 1 ? 2025)', // explicit year
 		'cron(0 0 1 1 ? 2025-2027)', // year range
+		'cron(0 0 29 2 ? *)', // leap day exists
+		'cron(0 0 31 1,4 ? *)', // Jan 31 exists, even though Apr 31 does not
+		'cron(0 0 30 FEB-MAR ? *)', // Mar 30 exists
+		'cron(0 9 ? * 6L *)', // L in day-of-week, day-of-month "?"
 	];
 	for (const ok of valid) {
 		test(`accepts valid "${ok}"`, () => {
@@ -30,7 +34,18 @@ describe('validateSchedule (synth-time guard)', () => {
 	// cron rejections here are structural only (wrong field count / not a rate|cron shape);
 	// field-level semantics are deferred to EventBridge to avoid false negatives.
 	// 'Rate(...)' / 'Cron(...)' are rejected: EventBridge requires lowercase, so the gate is case-sensitive.
-	const invalid = ['rate(10 seconds)', 'rate(0 minutes)', 'rate(1 minutes)', 'rate(5 minute)', 'every 5 minutes', 'cron(0 9 * * *)', 'cron(0 9 * * ? * extra)', 'Rate(5 minutes)', 'CRON(0 9 * * ? *)', ''];
+	// The day-field rules hold for every EventBridge cron: exactly one of day-of-month and
+	// day-of-week is "?", and a plain numeric day-of-month must exist in a listed month.
+	// Observed from Scheduler CreateSchedule (us-east-1, 2026-11-23); see DESIGN.md D-CJ-4.
+	const invalid = ['rate(10 seconds)', 'rate(0 minutes)', 'rate(1 minutes)', 'rate(5 minute)', 'every 5 minutes', 'cron(0 9 * * *)', 'cron(0 9 * * ? * extra)', 'Rate(5 minutes)', 'CRON(0 9 * * ? *)', '',
+		'cron(0 12 * * MON *)', // both day fields set
+		'cron(0 12 1 * MON *)', // both day fields set
+		'cron(0 9 L * MON *)', // both day fields set, with L
+		'cron(0 0 ? * ? *)', // neither day field set
+		'cron(0 0 30 2 ? *)', // Feb 30
+		'cron(0 0 30-31 FEB ? *)', // Feb 30-31
+		'cron(0 0 31 4,6,9,11 ? *)', // 31st of 30-day months only
+	];
 	for (const bad of invalid) {
 		test(`rejects invalid "${bad}" with InvalidScheduleExpression`, () => {
 			assert.throws(
@@ -45,12 +60,14 @@ describe('validateTimezone (synth-time guard)', () => {
 	test('accepts a valid IANA timezone', () => {
 		assert.doesNotThrow(() => validateTimezone('America/New_York'));
 	});
-	test('rejects an invalid timezone', () => {
-		assert.throws(
-			() => validateTimezone('Mars/Phobos'),
-			(e: unknown) => isBlocksError(e, CronJobErrors.InvalidTimezone),
-		);
-	});
+	for (const bad of ['Mars/Phobos', '', '   ']) {
+		test(`rejects invalid timezone ${JSON.stringify(bad)}`, () => {
+			assert.throws(
+				() => validateTimezone(bad),
+				(e: unknown) => isBlocksError(e, CronJobErrors.InvalidTimezone),
+			);
+		});
+	}
 });
 
 describe('parseScheduleForMock (local firing) — distinguishes unsupported from invalid', () => {

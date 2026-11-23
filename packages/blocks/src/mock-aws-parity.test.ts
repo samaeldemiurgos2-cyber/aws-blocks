@@ -52,7 +52,6 @@ const PARITY_ALLOWLIST: Record<string, Partial<Record<Rule, string>>> = {
 			'Follow-up: both entries share AgentBase validation; the AWS dispatch adds a request schema and session-id limit the mock lacks. Open PR #1376 changes agent.ts and agent.aws.ts.',
 	},
 	'bb-async-job': { paritySuite: 'Open PR #432 adds delaySeconds validation to both entries; add the suite with or after it.' },
-	'bb-cron-job': { paritySuite: 'No runtime methods; schedules are checked at synth. Open PRs #686, #688 and #1346 change the local mock.' },
 	'bb-dashboard': { paritySuite: 'No runtime methods that take caller input.' },
 	'bb-database': { paritySuite: 'Open PRs #716, #1386 and #1432 rewrite both entries.' },
 	'bb-knowledge-base': { paritySuite: 'Follow-up: retrieve() filter values are not validated the same way. Open PR #427 changes index.mock.ts.' },

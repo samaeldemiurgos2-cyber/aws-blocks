@@ -7,6 +7,7 @@ import { Logger } from '@aws-cdk-blocks/bb-logger';
 import type { ScopeParent } from '@aws-cdk-blocks/core';
 import { getConfigSync, registerSdkIdentifiers, Scope } from '@aws-cdk-blocks/core';
 import { CRON_RUNNER_ID, cronRunnerConfigKey, toCronJobEvent } from './runner.js';
+import { validateSchedule, validateTimezone } from './schedule.js';
 import type { CronJobEvent, CronJobOptions } from './types.js';
 import { BB_NAME, BB_VERSION } from './version.js';
 
@@ -19,6 +20,10 @@ export class CronJob<T = void> extends Scope {
 
 	constructor(scope: ScopeParent, id: string, options: CronJobOptions<T>) {
 		super(id, { parent: scope, bbName: BB_NAME, bbVersion: BB_VERSION });
+		// Same checks as the mock and the synth gate, so a CronJob built here rejects
+		// the same inputs. Synth runs these first, so a deployed schedule passes them.
+		validateSchedule(options.schedule);
+		if (options.timezone !== undefined) validateTimezone(options.timezone);
 		this.log = options?.logger ?? new Logger(this, 'logger', { level: 'error' });
 		registerSdkIdentifiers(this.fullId, { scheduleName: `${this.fullId}`.substring(0, 64) });
 

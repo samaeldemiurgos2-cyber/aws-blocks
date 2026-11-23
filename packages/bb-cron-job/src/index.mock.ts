@@ -18,7 +18,7 @@ assertNotMockInDeployedEnv('bb-cron-job');
 export { CronJobErrors } from './errors.js';
 export type { CronJobEvent, CronJobOptions } from './types.js';
 
-import { parseScheduleForMock, validateTimezone, type CronFields, type RateSchedule, type CronSchedule } from './schedule.js';
+import { parseScheduleForMock, validateSchedule, validateTimezone, type CronFields, type RateSchedule, type CronSchedule } from './schedule.js';
 
 /**
  * Scheduled task execution backed by EventBridge Scheduler and Lambda.
@@ -89,10 +89,15 @@ export class CronJob<T = void> extends Scope {
 		this._enabled = options.enabled !== false;
 		registerSdkIdentifiers(this.fullId, { scheduleName: `mock-${this.fullId}` });
 
-		if (options.timezone) {
+		// The synth gate first, in the same order as the CDK and AWS entries (schedule,
+		// then timezone), so an input with both wrong gets the same named error.
+		validateSchedule(options.schedule);
+		// `!== undefined` (not truthiness) so `timezone: ''` is rejected, as at synth.
+		if (options.timezone !== undefined) {
 			validateTimezone(options.timezone);
 		}
 
+		// Then the mock's own parser, which also flags valid cron it can't simulate.
 		this._schedule = parseScheduleForMock(options.schedule);
 
 		if (this._enabled) {
@@ -148,11 +153,8 @@ export class CronJob<T = void> extends Scope {
 		if (next === null) {
 			// Nothing matches within the search window (e.g. a leap day years away):
 			// search again later instead of firing on a date the schedule doesn't match.
-			if (canNeverMatch(sched.fields)) {
-				console.warn(`[CronJob:${this.id}] schedule can never match a real date (e.g. day 30 of February), so it will never fire. In AWS this would fail, check the day and month fields.`);
-			} else {
-				console.log(`[CronJob:${this.id}] no fire time within a year, checking again later`);
-			}
+			// A day that never exists (Feb 30) is rejected in the constructor instead.
+			console.log(`[CronJob:${this.id}] no fire time within a year, checking again later`);
 			this._timer = setTimeout(() => this._scheduleCronTick(), MAX_TIMEOUT_MS);
 			(this._timer as NodeJS.Timeout).unref();
 			return;
@@ -194,15 +196,6 @@ export class CronJob<T = void> extends Scope {
 
 /** Largest delay `setTimeout` accepts; longer delays fire immediately. */
 const MAX_TIMEOUT_MS = 2_147_483_647;
-
-/** Longest each month can be, with February at its leap-year length. */
-const MAX_DAYS_IN_MONTH = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-
-/** True when no listed day of month exists in any listed month, so the schedule can never fire. */
-function canNeverMatch(fields: CronFields): boolean {
-	if (fields.dayOfMonth.length === 0) return false;
-	return !fields.month.some(m => fields.dayOfMonth.some(d => d <= MAX_DAYS_IN_MONTH[m - 1]));
-}
 
 /** Returns the next matching minute within a year after `after`, or `null` if there is none. */
 function nextCronTime(fields: CronFields, after: Date, timezone?: string): Date | null {

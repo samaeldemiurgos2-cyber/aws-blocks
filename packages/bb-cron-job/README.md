@@ -63,8 +63,8 @@ import { CronJobErrors } from 'aws-cdk-blocks';
 
 | Constant | `error.name` | Thrown when |
 |----------|--------------|-------------|
-| `CronJobErrors.InvalidSchedule` | `InvalidScheduleExpression` | Construction (local) or synth: an invalid rate expression, unrecognized expression, or cron with the wrong field count. With six cron fields, synth leaves field values to EventBridge; the local parser also checks the fields it simulates. |
-| `CronJobErrors.InvalidTimezone` | `InvalidTimezoneExpression` | Construction (local) or synth time: `timezone` is not a valid IANA timezone. |
+| `CronJobErrors.InvalidSchedule` | `InvalidScheduleExpression` | Construction (local or AWS) or synth: an invalid rate expression, unrecognized expression, cron with the wrong field count, cron where day-of-month and day-of-week are both set or both `?`, or a day-of-month that no listed month has (`cron(0 0 30 2 ? *)`). Other cron field values are left to EventBridge; the local parser also checks the fields it simulates. |
+| `CronJobErrors.InvalidTimezone` | `InvalidTimezoneExpression` | Construction (local or AWS) or synth time: `timezone` is empty or not a valid IANA timezone. |
 | `CronJobErrors.ScheduleNotSupported` | `ScheduleNotSupportedInMock` | Local mock only, at construction: a valid cron expression uses `L`, `W` or `#` in a day field. The schedule deploys and runs on AWS; the mock cannot simulate it. |
 | `CronJobErrors.UnsupportedCompute` | `UnsupportedComputeException` | Synth time: the resolved compute is not a serverless or container compute, or belongs to another backend. |
 
@@ -81,7 +81,7 @@ cron(30 9 ? * MON-FRI *) → weekdays at 9:30 AM
 cron(0 0 1 * ? *)       → first day of every month at midnight
 ```
 
-Use `?` for either day-of-month or day-of-week (one must be `?`).
+Use `?` for either day-of-month or day-of-week: exactly one of them must be `?`, so `cron(0 12 * * MON *)` and `cron(0 0 ? * ? *)` are rejected.
 
 Cron expressions are evaluated in `timezone`: `schedule: 'cron(0 9 * * ? *)', timezone: 'America/Los_Angeles'` runs daily at 9:00 AM Pacific.
 
