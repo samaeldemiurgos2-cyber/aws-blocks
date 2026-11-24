@@ -97,6 +97,7 @@ export function countRecipients(msg: { to: string | string[]; cc?: string[]; bcc
  * it can still exceed SES's 40 MB limit once encoded.
  *
  * @throws {EmailErrors.InvalidInput} If any address is malformed, the message has more than 50 recipients, or the subject contains a line break or other control character.
+ * @throws {EmailErrors.InvalidInput} If the message has no recipients (To, CC and BCC all empty or absent).
  * @throws {EmailErrors.SendFailed} If the message exceeds 40 MB.
  */
 export function validateMessage(message: EmailMessage, fromAddress: string, replyTo?: string[]): void {
@@ -107,7 +108,15 @@ export function validateMessage(message: EmailMessage, fromAddress: string, repl
 	if (cc) validateAddresses(cc);
 	if (bcc) validateAddresses(bcc);
 
-	if (countRecipients({ to, cc, bcc }) > MAX_RECIPIENTS_PER_MESSAGE) {
+	const recipientCount = countRecipients({ to, cc, bcc });
+	// SES requires at least one recipient across To, CC and BCC combined (an
+	// empty To is fine when CC or BCC has one). It rejects an empty destination
+	// with BadRequestException, which mapSesError turns into InvalidInput; check
+	// here so the mock fails the same way and the AWS entry never calls SES.
+	if (recipientCount === 0) {
+		throw blocksError(EmailErrors.InvalidInput, 'Message must have at least one recipient in To, CC or BCC.');
+	}
+	if (recipientCount > MAX_RECIPIENTS_PER_MESSAGE) {
 		throw blocksError(EmailErrors.InvalidInput, `Recipient count exceeds ${MAX_RECIPIENTS_PER_MESSAGE}.`);
 	}
 

@@ -118,12 +118,14 @@ calling SES:
   (`Jane Doe <jane@example.com>`, `"Doe, Jane" <jane@example.com>`). The address is checked as
   given: surrounding whitespace and control characters are rejected;
 - at most 50 recipients per message (To + CC + BCC combined);
+- at least one recipient per message across To, CC and BCC. An empty `to` is allowed when `cc` or
+  `bcc` has an address; `to: []` with no CC or BCC is rejected, as SES rejects it;
 - the subject must be a single line: CR, LF and other control characters (C0, DEL, C1, U+2028
   and U+2029) are rejected, not stripped. Remove line breaks from a subject built from user
   input before sending;
 - at most 40 MB per message.
 
-A malformed address, too many recipients or a control character in the subject throws `InvalidInputException`; an oversized message
+A malformed address, no recipients, too many recipients or a control character in the subject throws `InvalidInputException`; an oversized message
 throws `EmailSendFailedException`. In `sendBatch()` the message is marked `failed` instead.
 
 ## Errors
@@ -132,7 +134,7 @@ Match with `isBlocksError(e, EmailErrors.<Constant>)`. Import both `isBlocksErro
 
 | Constant | `error.name` | Thrown when |
 |----------|--------------|-------------|
-| `EmailErrors.InvalidInput` | `InvalidInputException` | A malformed address, a control character in the subject, more than 50 recipients, a batch larger than `maxBatchSize`, an invalid `maxBatchSize`, or SES rejects the request as invalid |
+| `EmailErrors.InvalidInput` | `InvalidInputException` | A malformed address, a control character in the subject, no recipients, more than 50 recipients, a batch larger than `maxBatchSize`, an invalid `maxBatchSize`, or SES rejects the request as invalid |
 | `EmailErrors.SendFailed` | `EmailSendFailedException` | A message over 40 MB, SES rejects the message, or any other send failure |
 | `EmailErrors.DomainNotVerified` | `DomainNotVerifiedException` | The sending domain or address is not verified in SES |
 | `EmailErrors.AccountPaused` | `AccountSendingPausedException` | AWS has paused or suspended the account's sending |

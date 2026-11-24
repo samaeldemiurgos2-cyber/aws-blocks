@@ -99,6 +99,7 @@ export class EmailClient extends Scope {
 	 * @param message - The email message to send (to, subject, body, optional html/cc/bcc).
 	 * @returns The mock message ID for the sent email.
 	 * @throws {EmailErrors.InvalidInput} If any address fails validation or recipient count exceeds 50.
+	 * @throws {EmailErrors.InvalidInput} If the message has no recipients (To, CC and BCC all empty or absent).
 	 * @throws {EmailErrors.SendFailed} If the message exceeds 40 MB.
 	 */
 	async send(message: EmailMessage): Promise<SendResult> {

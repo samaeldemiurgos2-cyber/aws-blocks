@@ -60,7 +60,12 @@ export interface EmailOptions {
  * @param bcc - Optional BCC recipient address(es).
  */
 export interface EmailMessage {
-	/** Recipient email address(es). */
+	/**
+	 * Recipient email address(es).
+	 *
+	 * May be an empty array when `cc` or `bcc` has an address; a message needs at least one
+	 * recipient across To, CC and BCC, or it is rejected with `EmailErrors.InvalidInput`.
+	 */
 	to: string | string[];
 	/** The email subject line. */
 	subject: string;

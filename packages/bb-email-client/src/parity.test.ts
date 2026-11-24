@@ -110,6 +110,15 @@ const sendCases: SendCase[] = [
 		message: msg({ to: addresses(30), cc: addresses(11), bcc: addresses(10) }),
 		error: EmailErrors.InvalidInput,
 	},
+	// SES needs at least one recipient across To, CC and BCC; an empty To is fine when CC or BCC has one.
+	{ label: 'no recipients (empty To, no CC or BCC)', message: msg({ to: [] }), error: EmailErrors.InvalidInput },
+	{
+		label: 'no recipients (empty To, CC and BCC)',
+		message: msg({ to: [], cc: [], bcc: [] }),
+		error: EmailErrors.InvalidInput,
+	},
+	{ label: 'an empty To with a BCC recipient', message: msg({ to: [], bcc: ['hidden@example.com'] }), error: null },
+	{ label: 'an empty To with a CC recipient', message: msg({ to: [], cc: ['copy@example.com'] }), error: null },
 	{ label: 'a malformed To address', message: msg({ to: 'not-an-address' }), error: EmailErrors.InvalidInput },
 	{
 		label: 'a To address with a CRLF header injection',
@@ -250,6 +259,28 @@ describe('EmailClient.sendBatch() validates the same input the same way on mock 
 			shape(mockResult).map((e) => e.status),
 			['success', 'failed', 'failed', 'success'],
 		);
+		assert.strictEqual(sent.length, 1, 'the two valid entries go out in one SendBulkEmail call');
+		assert.strictEqual(sent[0].BulkEmailEntries?.length, 2);
+	});
+
+	test('an entry with no recipients is marked failed with the same error, and never reaches SES', async () => {
+		const options: EmailOptions = { fromAddress: FROM };
+		const batch = [
+			msg({ to: 'a@example.com' }),
+			msg({ to: [] }),
+			msg({ to: [], cc: [], bcc: [] }),
+			msg({ to: [], bcc: ['hidden@example.com'] }),
+		];
+		const mockResult = await new MockEmailClient(new Scope('app'), uniqueId(), options).sendBatch(batch);
+		const { result: awsResult, sent } = await withAws(options, (client) => client.sendBatch(batch));
+
+		const shape = (r: typeof mockResult) => r.results.map((e) => ({ status: e.status, error: e.error }));
+		assert.deepStrictEqual(shape(awsResult), shape(mockResult));
+		assert.deepStrictEqual(
+			shape(mockResult).map((e) => e.status),
+			['success', 'failed', 'failed', 'success'],
+		);
+		assert.ok(mockResult.results[1].error?.includes('recipient'), JSON.stringify(mockResult.results[1]));
 		assert.strictEqual(sent.length, 1, 'the two valid entries go out in one SendBulkEmail call');
 		assert.strictEqual(sent[0].BulkEmailEntries?.length, 2);
 	});

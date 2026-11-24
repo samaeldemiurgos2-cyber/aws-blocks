@@ -107,6 +107,7 @@ export class EmailClient extends Scope {
 	 * @returns The SES message ID for the sent email.
 	 * @throws {EmailErrors.SendFailed} General send failure.
 	 * @throws {EmailErrors.InvalidInput} If input is invalid (e.g. malformed address, too many recipients).
+	 * @throws {EmailErrors.InvalidInput} If the message has no recipients (To, CC and BCC all empty or absent). Checked before calling SES.
 	 * @throws {EmailErrors.DomainNotVerified} If the sending domain is not verified.
 	 * @throws {EmailErrors.AccountPaused} If account sending is paused.
 	 * @throws {EmailErrors.RateLimited} If rate limit is exceeded.
