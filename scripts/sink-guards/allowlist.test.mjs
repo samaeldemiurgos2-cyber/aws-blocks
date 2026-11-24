@@ -43,6 +43,65 @@ describe('compareWithAllowlist', () => {
 		assert.deepEqual(result.stale.map((e) => e.in), ['view']);
 	});
 
+	it('tells an object literal method from a function of the same name', () => {
+		// The reviewed call in `view` drops its shell; an identical call appears
+		// in `handlers.view`.
+		const src = `${VIEW.replace('shell: isWin', 'shell: false')}export const handlers = { view(name: string) { return execFileSync('npm', ['view', name], { shell: isWin }); } };\n`;
+		const result = compare(src, [entry(VIEW_SITE)]);
+		assert.deepEqual(result.unexpected.map((f) => f.in), ['handlers.view']);
+		assert.deepEqual(result.stale.map((e) => e.in), ['view']);
+	});
+
+	it('names object literal members by the path they are assigned to', () => {
+		const src = [
+			"const api = { routes: { list: () => execFileSync('npm', [x], { shell: true }) } };",
+			"function make() { return { run() { execFileSync('npm', [x], { shell: true }); } }; }",
+			"const handlers = { verify() { execFileSync('npm', [x], { shell: true }); } } satisfies X;",
+			"class K { handlers = { verify() { execFileSync('npm', [x], { shell: true }); } }; }",
+			"const routes = { [k]: { verify() { execFileSync('npm', [x], { shell: true }); } } };",
+			"module.exports = { verify() { execFileSync('npm', [x], { shell: true }); } };",
+			"exports.api = { verify() { execFileSync('npm', [x], { shell: true }); } };",
+			"export default { verify() { execFileSync('npm', [x], { shell: true }); } };",
+			"const keyed = { [k]() { execFileSync('npm', [x], { shell: true }); } };",
+		].join('\n');
+		assert.deepEqual(
+			sites(src).map((f) => f.in),
+			[
+				'api.routes.list',
+				'make.{}.run',
+				'handlers.verify',
+				'K.handlers.verify',
+				'routes.[computed].verify',
+				'module.exports.verify',
+				'exports.api.verify',
+				'default.verify',
+				'keyed.[computed]',
+			],
+		);
+	});
+
+	it('names anonymous classes by their binding, and counts namespaces', () => {
+		const call = "execFileSync('npm', [x], { shell: true });";
+		const src = [
+			`export const Handlers = class { verify() { ${call} } };`,
+			`namespace handlers { export function verify() { ${call} } }`,
+			`export default class { verify() { ${call} } }`,
+		].join('\n');
+		assert.deepEqual(
+			sites(src).map((f) => f.in),
+			['Handlers.verify', 'handlers.verify', 'default.verify'],
+		);
+	});
+
+	it('tells a method of an anonymous class or a namespace from a function of the same name', () => {
+		const copy = "verify(name: string) { return execFileSync('npm', ['view', name], { shell: isWin }); }";
+		for (const container of [`export const Handlers = class { ${copy} };`, `namespace handlers { export function ${copy} }`]) {
+			const result = compare(`${VIEW.replace('shell: isWin', 'shell: false')}${container}\n`, [entry(VIEW_SITE)]);
+			assert.equal(result.unexpected.length, 1, container);
+			assert.deepEqual(result.stale.map((e) => e.in), ['view']);
+		}
+	});
+
 	it('reports a change to the argv of an allowlisted shell: option call', () => {
 		const result = compare(VIEW.replace("['view', name]", "['exec', name]"), [entry(VIEW_SITE)]);
 		assert.equal(result.unexpected.length, 1);
