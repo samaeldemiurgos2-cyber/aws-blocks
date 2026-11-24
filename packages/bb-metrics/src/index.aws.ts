@@ -20,6 +20,9 @@ import {
 	validateDimensions,
 	validateBatchSize,
 	validateNamespace,
+	validateNameDimensionClash,
+	unpublishableReason,
+	validateUnit,
 	mergeDimensions,
 } from './validation.js';
 import { Logger } from '@aws-cdk-blocks/bb-logger';
@@ -112,7 +115,14 @@ export class Metrics extends Scope implements MetricsEmitter {
 	 * @param value - Numeric value to record.
 	 * @param options - Unit, dimensions, timestamp, and resolution.
 	 * @throws {MetricsErrors.InvalidMetricName} If the metric name is empty or exceeds 1024 characters.
+	 * @throws {MetricsErrors.InvalidMetricName} If the metric name is `_aws` or equals one of its dimension keys.
 	 * @throws {MetricsErrors.InvalidDimensions} If dimensions exceed 30 entries or contain empty keys/values.
+	 * @throws {MetricsErrors.InvalidDimensions} If a dimension key is `_aws`.
+	 * @throws {MetricsErrors.InvalidUnit} If the unit is not a `MetricUnit` value.
+	 *
+	 * A value that is not a finite number (`NaN`, `Infinity`), or a timestamp that is not a
+	 * valid `Date`, does not throw: the data point is not written and a warning is logged
+	 * through the configured logger.
 	 *
 	 * @example
 	 * ```typescript
@@ -125,27 +135,22 @@ export class Metrics extends Scope implements MetricsEmitter {
 	 * ```
 	 */
 	emit(name: string, value: number, options?: EmitOptions): void {
-		validateMetricName(name);
-		const dims = mergeDimensions(this.defaultDimensions, options?.dimensions);
-		validateDimensions(dims);
-
-		writeEmf(this.namespace, [{
-			name,
-			value,
-			unit: options?.unit ?? 'None',
-			dimensions: dims,
-			timestamp: options?.timestamp,
-			resolution: options?.resolution ?? 'standard',
-		}]);
+		emitData(this.namespace, this.defaultDimensions, this.log, [{ ...options, name, value }]);
 	}
 
 	/**
 	 * Record multiple metric data points in a single EMF document.
 	 * Metrics with the same dimension set are grouped into one EMF entry.
+	 * Metrics with different timestamps go into separate entries, and a metric
+	 * name repeated within a group goes into another entry so every value is kept.
+	 * Every data point is validated before anything is written. A data point whose value
+	 * is not a finite number, or whose timestamp is not a valid `Date`, is left out with a
+	 * logged warning and the rest of the batch is still written.
 	 *
 	 * @param metrics - Array of metric data points (max 100 per call).
 	 * @throws {MetricsErrors.InvalidMetricName} If any metric name is invalid.
 	 * @throws {MetricsErrors.InvalidDimensions} If any metric's dimensions are invalid.
+	 * @throws {MetricsErrors.InvalidUnit} If any unit is not a `MetricUnit` value.
 	 * @throws {MetricsErrors.BatchTooLarge} If the batch exceeds 100 metrics.
 	 *
 	 * @example
@@ -160,22 +165,7 @@ export class Metrics extends Scope implements MetricsEmitter {
 	emitBatch(metrics: MetricDatum[]): void {
 		validateBatchSize(metrics.length);
 
-		for (const m of metrics) {
-			validateMetricName(m.name);
-			const dims = mergeDimensions(this.defaultDimensions, m.dimensions);
-			validateDimensions(dims);
-		}
-
-		const resolved = metrics.map(m => ({
-			name: m.name,
-			value: m.value,
-			unit: (m.unit ?? 'None') as MetricUnit,
-			dimensions: mergeDimensions(this.defaultDimensions, m.dimensions),
-			timestamp: m.timestamp,
-			resolution: (m.resolution ?? 'standard') as MetricResolution,
-		}));
-
-		writeEmf(this.namespace, resolved);
+		emitData(this.namespace, this.defaultDimensions, this.log, metrics);
 	}
 
 	/**
@@ -200,6 +190,7 @@ export class Metrics extends Scope implements MetricsEmitter {
 		return new ChildMetrics(
 			this.namespace,
 			{ ...this.defaultDimensions, ...dimensions },
+			this.log,
 		);
 	}
 
@@ -226,42 +217,17 @@ class ChildMetrics implements MetricsEmitter {
 	constructor(
 		private namespace: string,
 		readonly defaultDimensions: Readonly<Record<string, string>>,
+		private log: ChildLogger,
 	) {}
 
 	emit(name: string, value: number, options?: EmitOptions): void {
-		validateMetricName(name);
-		const dims = mergeDimensions(this.defaultDimensions, options?.dimensions);
-		validateDimensions(dims);
-
-		writeEmf(this.namespace, [{
-			name,
-			value,
-			unit: options?.unit ?? 'None',
-			dimensions: dims,
-			timestamp: options?.timestamp,
-			resolution: options?.resolution ?? 'standard',
-		}]);
+		emitData(this.namespace, this.defaultDimensions, this.log, [{ ...options, name, value }]);
 	}
 
 	emitBatch(metrics: MetricDatum[]): void {
 		validateBatchSize(metrics.length);
 
-		for (const m of metrics) {
-			validateMetricName(m.name);
-			const dims = mergeDimensions(this.defaultDimensions, m.dimensions);
-			validateDimensions(dims);
-		}
-
-		const resolved = metrics.map(m => ({
-			name: m.name,
-			value: m.value,
-			unit: (m.unit ?? 'None') as MetricUnit,
-			dimensions: mergeDimensions(this.defaultDimensions, m.dimensions),
-			timestamp: m.timestamp,
-			resolution: (m.resolution ?? 'standard') as MetricResolution,
-		}));
-
-		writeEmf(this.namespace, resolved);
+		emitData(this.namespace, this.defaultDimensions, this.log, metrics);
 	}
 
 	flush(): void {}
@@ -270,6 +236,7 @@ class ChildMetrics implements MetricsEmitter {
 		return new ChildMetrics(
 			this.namespace,
 			{ ...this.defaultDimensions, ...dimensions },
+			this.log,
 		);
 	}
 }
@@ -279,33 +246,89 @@ class ChildMetrics implements MetricsEmitter {
 interface ResolvedMetric {
 	name: string;
 	value: number;
-	unit: string;
+	unit: MetricUnit;
 	dimensions: Record<string, string>;
 	timestamp?: Date;
 	resolution: MetricResolution;
 }
 
+/** One EMF document: a single dimension set and timestamp, each metric name at most once. */
 interface MetricGroup {
 	dimensions: Record<string, string>;
+	timestamp?: Date;
 	metrics: ResolvedMetric[];
 }
 
 /**
+ * Validate one data point and resolve it against the emitter's default dimensions.
+ * Shared by `emit` and `emitBatch` on both `Metrics` and `ChildMetrics`.
+ */
+function resolveMetric(defaultDimensions: Readonly<Record<string, string>>, datum: MetricDatum): ResolvedMetric {
+	validateMetricName(datum.name);
+	const unit = datum.unit ?? 'None';
+	validateUnit(unit);
+	const dimensions = mergeDimensions(defaultDimensions, datum.dimensions);
+	validateDimensions(dimensions);
+	validateNameDimensionClash(datum.name, dimensions);
+	return {
+		name: datum.name,
+		value: datum.value,
+		unit,
+		dimensions,
+		timestamp: datum.timestamp,
+		resolution: datum.resolution ?? 'standard',
+	};
+}
+
+/**
+ * Validate, resolve and write data points for `emit` and `emitBatch`.
+ *
+ * Checks on names, dimensions and units throw for the whole call before anything
+ * is written: they depend on code, not data, so they fail on the first run.
+ * A non-finite value or an invalid timestamp comes from runtime data (`errors / total`
+ * is `NaN` at zero traffic), so that data point is dropped with a warning and its
+ * valid siblings are still written, rather than failing the request it observes.
+ */
+function emitData(
+	namespace: string,
+	defaultDimensions: Readonly<Record<string, string>>,
+	log: ChildLogger,
+	data: readonly MetricDatum[],
+): void {
+	const resolved = data.map(d => resolveMetric(defaultDimensions, d));
+	const publishable: ResolvedMetric[] = [];
+	for (const m of resolved) {
+		const reason = unpublishableReason(m.value, m.timestamp);
+		if (reason === undefined) {
+			publishable.push(m);
+		} else {
+			log.warn(`Metric '${m.name.substring(0, 50)}' was not written: ${reason}`, { metric: m.name.substring(0, 50) });
+		}
+	}
+	writeEmf(namespace, publishable);
+}
+
+/**
  * Write one or more metrics as EMF-formatted JSON lines to stdout.
- * Groups metrics by dimension set (EMF requires same dimensions per entry).
+ * Groups metrics by dimension set and timestamp (EMF requires the same
+ * dimensions per entry, and each document carries a single timestamp).
  */
 function writeEmf(namespace: string, metrics: ResolvedMetric[]): void {
 	if (metrics.length === 0) return;
 
-	const groups = groupByDimensions(metrics);
+	const groups = groupMetrics(metrics);
+	// One "now" per call so undated metrics in a batch share a timestamp.
+	const now = Date.now();
 
 	for (const group of groups) {
 		const dimKeys = Object.keys(group.dimensions);
-		const timestamp = group.metrics[0].timestamp?.getTime() ?? Date.now();
 
+		// `_aws` is written first. Validation guarantees no dimension key or metric
+		// name is `_aws` and no metric name equals a dimension key, so nothing
+		// written below overwrites an earlier key.
 		const emfPayload: Record<string, unknown> = {
 			_aws: {
-				Timestamp: timestamp,
+				Timestamp: group.timestamp?.getTime() ?? now,
 				CloudWatchMetrics: [{
 					Namespace: namespace,
 					Dimensions: dimKeys.length > 0 ? [dimKeys] : [[]],
@@ -320,7 +343,9 @@ function writeEmf(namespace: string, metrics: ResolvedMetric[]): void {
 		};
 
 		for (const m of group.metrics) {
-			emfPayload[m.name] = m.value;
+			// defineProperty, not assignment: `emfPayload['__proto__'] = v` would call the
+			// prototype setter and leave the metric with no value in the document.
+			Object.defineProperty(emfPayload, m.name, { value: m.value, enumerable: true, writable: true, configurable: true });
 		}
 
 		process.stdout.write(JSON.stringify(emfPayload) + '\n');
@@ -328,26 +353,41 @@ function writeEmf(namespace: string, metrics: ResolvedMetric[]): void {
 }
 
 /**
- * Group metrics by their dimension set. EMF requires metrics in the same
- * CloudWatchMetrics entry to share the same dimension keys and values.
+ * Group metrics into EMF documents. EMF requires metrics in the same
+ * CloudWatchMetrics entry to share the same dimension keys and values, and
+ * each document has one timestamp. A metric name repeated within a group
+ * goes into another document for that group, so every value is kept.
  */
-function groupByDimensions(metrics: ResolvedMetric[]): MetricGroup[] {
-	const groups = new Map<string, MetricGroup>();
+function groupMetrics(metrics: ResolvedMetric[]): MetricGroup[] {
+	const groups: MetricGroup[] = [];
+	// Per group key: the documents created so far, in order, with the names each holds.
+	const byKey = new Map<string, { group: MetricGroup; names: Set<string> }[]>();
 
 	for (const m of metrics) {
-		const key = dimensionKey(m.dimensions);
-		let group = groups.get(key);
-		if (!group) {
-			group = { dimensions: m.dimensions, metrics: [] };
-			groups.set(key, group);
+		const key = groupKey(m);
+		let docs = byKey.get(key);
+		if (!docs) {
+			docs = [];
+			byKey.set(key, docs);
 		}
-		group.metrics.push(m);
+		let doc = docs.find(d => !d.names.has(m.name));
+		if (!doc) {
+			doc = { group: { dimensions: m.dimensions, timestamp: m.timestamp, metrics: [] }, names: new Set() };
+			docs.push(doc);
+			groups.push(doc.group);
+		}
+		doc.group.metrics.push(m);
+		doc.names.add(m.name);
 	}
 
-	return Array.from(groups.values());
+	return groups;
 }
 
-function dimensionKey(dims: Record<string, string>): string {
-	const sorted = Object.entries(dims).sort(([a], [b]) => a.localeCompare(b));
-	return sorted.map(([k, v]) => `${k}=${v}`).join('&');
+/**
+ * Unambiguous key for a metric's dimension set and timestamp. JSON-encoding the
+ * sorted entries keeps `{ a: '1&b=2' }` and `{ a: '1', b: '2' }` apart.
+ */
+function groupKey(m: ResolvedMetric): string {
+	const sorted = Object.entries(m.dimensions).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+	return JSON.stringify([m.timestamp?.getTime() ?? null, sorted]);
 }

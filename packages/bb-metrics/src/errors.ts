@@ -19,10 +19,18 @@
  * ```
  */
 export const MetricsErrors = {
-	/** Metric name is empty or exceeds 1024 characters. */
+	/**
+	 * Metric name is empty, exceeds 1024 characters, is the reserved `_aws` key,
+	 * or equals one of the data point's own dimension keys.
+	 */
 	InvalidMetricName: 'InvalidMetricNameException',
-	/** Dimensions exceed 30 entries, or contain empty keys/values, or key/value exceeds 1024 chars. */
+	/**
+	 * Dimensions exceed 30 entries, or contain empty keys/values, or key/value exceeds 1024 chars,
+	 * or use the reserved `_aws` key.
+	 */
 	InvalidDimensions: 'InvalidDimensionsException',
+	/** Metric unit is not one of the `MetricUnit` values. */
+	InvalidUnit: 'InvalidUnitException',
 	/** Batch contains more than 100 metrics. */
 	BatchTooLarge: 'BatchTooLargeException',
 	/** Namespace is empty, too long, contains invalid characters, or uses reserved AWS/ prefix. */

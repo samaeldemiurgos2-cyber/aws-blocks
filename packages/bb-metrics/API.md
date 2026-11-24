@@ -67,6 +67,7 @@ export interface MetricsEmitter {
 export const MetricsErrors: {
     readonly InvalidMetricName: "InvalidMetricNameException";
     readonly InvalidDimensions: "InvalidDimensionsException";
+    readonly InvalidUnit: "InvalidUnitException";
     readonly BatchTooLarge: "BatchTooLargeException";
     readonly InvalidNamespace: "InvalidNamespaceException";
 };
@@ -80,7 +81,7 @@ export interface MetricsOptions {
 }
 
 // @public
-export type MetricUnit = 'Count' | 'Seconds' | 'Milliseconds' | 'Microseconds' | 'Bytes' | 'Kilobytes' | 'Megabytes' | 'Gigabytes' | 'Percent' | 'Bits/Second' | 'None';
+export type MetricUnit = 'Count' | 'Seconds' | 'Milliseconds' | 'Microseconds' | 'Bytes' | 'Kilobytes' | 'Megabytes' | 'Gigabytes' | 'Terabytes' | 'Bits' | 'Kilobits' | 'Megabits' | 'Gigabits' | 'Terabits' | 'Percent' | 'Bytes/Second' | 'Kilobytes/Second' | 'Megabytes/Second' | 'Gigabytes/Second' | 'Terabytes/Second' | 'Bits/Second' | 'Kilobits/Second' | 'Megabits/Second' | 'Gigabits/Second' | 'Terabits/Second' | 'Count/Second' | 'None';
 
 // (No @packageDocumentation comment for this package)
 

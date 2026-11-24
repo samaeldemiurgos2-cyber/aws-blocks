@@ -79,6 +79,8 @@ emit('Count', 1, { dimensions: { endpoint: '/api' } })
 
 EMF requires all metrics in a single `CloudWatchMetrics` entry to share the same dimension keys and values. When `emitBatch` receives metrics with different dimension sets, they are grouped and written as separate JSON lines.
 
+The group key is the JSON encoding of the timestamp and the key-sorted dimension entries, so dimension values that contain separator characters cannot make two different sets share a group. Each document carries one `Timestamp`, so metrics with different timestamps are written as separate lines. Metric values sit next to the dimension values at the top level of the document, so a metric name repeated within a group goes into another line for that group rather than overwriting the earlier value.
+
 ### Child Emitters
 
 `child(dimensions)` returns a lightweight `ChildMetrics` object (not a Scope node) that:
@@ -122,9 +124,16 @@ This is unique among Building Blocks. Most BBs need a mock because their AWS run
 
 ## Validation
 
-All validation matches CloudWatch constraints:
-- **Metric name:** Non-empty, max 1024 characters
-- **Dimensions:** Max 30 key-value pairs, non-empty keys and values, max 1024 chars each
+Validation covers these CloudWatch constraints:
+- **Metric name:** Non-empty, max 1024 characters, not `_aws`, and not equal to one of its own dimension keys (both are top-level keys in the EMF document)
+- **Dimensions:** Max 30 key-value pairs, non-empty keys and values, max 1024 chars each, no `_aws` key
+- **Unit:** One of the `MetricUnit` values, which are the units the EMF schema accepts
 - **Batch size:** Max 100 metrics per `emitBatch` call (EMF document limit)
 
 Validation runs synchronously before the stdout write. Failures throw typed errors (`MetricsErrors.*`) that can be caught with `isBlocksError()`.
+
+The EMF specification is stricter than the limits above: metric names are limited to 255 characters, dimension keys to 250 characters and must not start with `:`, and both must be printable ASCII. Names and keys that pass validation here but break those rules are dropped by CloudWatch without an error. These limits are not enforced yet, because tightening them would make inputs that are accepted today start throwing.
+
+Values and timestamps come from runtime data rather than code, so they are not thrown on. A value that is not a finite number (`NaN` and `Infinity` serialize as `null`) or a timestamp that is not a valid `Date` (also `null`) leaves that data point out of the document with a warning through the configured logger. Its siblings in the batch are still written. A ratio such as `errors / total` is `NaN` at zero traffic, and a metrics call should not fail the request it observes.
+
+Metric values are written with `Object.defineProperty`, so a metric named `__proto__` gets its own key instead of calling the prototype setter.
