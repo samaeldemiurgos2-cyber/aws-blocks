@@ -5,7 +5,9 @@
 // a value interpolated into a regular expression, a shell command, a GitHub
 // Actions `run:` script, generated Kotlin/Swift/Dart source, or HTML.
 //
-// Each detector returns `{ file, line, kind, text }` sites. A site is a
+// Each detector returns `{ file, line, kind, in, text, code }` sites: `code`
+// is the site's full code, `text` its first characters for display, and `in`
+// the enclosing function (TypeScript/JavaScript sites only). A site is a
 // place where a value that isn't a compile-time constant reaches the sink
 // without passing through that sink's escape helper. The tests fail on any
 // site that isn't in their allowlist, and on any allowlist entry that no
@@ -60,6 +62,59 @@ function lineOf(sf, node) {
 
 function snippet(sf, node) {
 	return node.getText(sf).replace(/\s+/g, ' ').slice(0, 120);
+}
+
+/** The node's whole text, whitespace-normalized: what an allowlist entry matches. */
+function fullText(sf, node) {
+	return node.getText(sf).replace(/\s+/g, ' ');
+}
+
+/** The name a function-like node is declared under, if any. */
+function functionName(node) {
+	if ((ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isGetAccessor(node) || ts.isSetAccessor(node)) && node.name) {
+		return declaredName(node.name);
+	}
+	if (ts.isConstructorDeclaration(node)) return 'constructor';
+	if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
+		let p = node.parent;
+		while (p && (ts.isParenthesizedExpression(p) || ts.isAsExpression(p) || ts.isSatisfiesExpression(p))) p = p.parent;
+		if (p && (ts.isVariableDeclaration(p) || ts.isPropertyAssignment(p) || ts.isPropertyDeclaration(p)) && p.initializer) {
+			return declaredName(p.name);
+		}
+	}
+	return undefined;
+}
+
+/**
+ * The named functions and classes enclosing `node`, outermost first
+ * (`Hosting.build`), or `(top level)`. An anonymous callback is skipped, so
+ * the name is that of the function it was written in. Allowlist entries are
+ * scoped by it, so a reviewed site can't be swapped for a copy elsewhere in
+ * the file without an allowlist change.
+ */
+function scopeOf(node) {
+	const names = [];
+	for (let p = node.parent; p; p = p.parent) {
+		const name = ts.isClassLike(p) ? p.name?.text : functionName(p);
+		if (name) names.unshift(name);
+	}
+	return names.length ? names.join('.') : '(top level)';
+}
+
+/**
+ * A detected TypeScript/JavaScript site. `node` is what the entry matches on
+ * (its full text is `code`, its first 120 characters `text`), `at` where the
+ * line is reported, and `prefix` labels both (`onclick=: `).
+ */
+function astSite(file, sf, kind, node, { at = node, prefix = '' } = {}) {
+	return {
+		file,
+		line: lineOf(sf, at),
+		kind,
+		in: scopeOf(node),
+		text: prefix + snippet(sf, node),
+		code: prefix + fullText(sf, node),
+	};
 }
 
 function walk(node, visit) {
@@ -316,7 +371,7 @@ export function findRegexSinks(file, text) {
 		if (!ts.isIdentifier(callee) || callee.text !== 'RegExp') return;
 		const arg = node.arguments?.[0];
 		if (!arg || isConstant(arg, ctx)) return;
-		found.push({ file, line: lineOf(sf, node), kind: 'regex', text: snippet(sf, node) });
+		found.push(astSite(file, sf, 'regex', node));
 	});
 	return found;
 }
@@ -433,7 +488,7 @@ export function findShellSinks(file, text) {
 		if (exported && COMMAND_STRING_FNS.has(exported)) {
 			const cmd = node.arguments[0];
 			if (cmd && !isConstant(cmd, ctx)) {
-				found.push({ file, line: lineOf(sf, node), kind: 'shell-command-string', text: snippet(sf, node) });
+				found.push(astSite(file, sf, 'shell-command-string', node));
 				return;
 			}
 		}
@@ -451,7 +506,7 @@ export function findShellSinks(file, text) {
 					raw = flag >= 0 && argv.elements.slice(flag + 1).some((e) => ts.isSpreadElement(e) || !isConstant(e, ctx));
 				}
 				if (raw) {
-					found.push({ file, line: lineOf(sf, node), kind: 'shell-program-argv', text: snippet(sf, node) });
+					found.push(astSite(file, sf, 'shell-program-argv', node));
 					return;
 				}
 			}
@@ -463,7 +518,9 @@ export function findShellSinks(file, text) {
 			if (!obj) continue;
 			for (const site of shellOptionSites(obj)) {
 				if (site.kind === 'shell-option-spread' && !exported) continue;
-				found.push({ file, line: lineOf(sf, site.node), kind: site.kind, text: snippet(sf, site.node) });
+				// The site is the whole call: an entry vouches for the program and
+				// argv the shell runs, which the `shell:` property alone doesn't name.
+				found.push(astSite(file, sf, site.kind, node, { at: site.node }));
 			}
 		}
 	});
@@ -618,11 +675,11 @@ export function findHtmlSinks(file, text) {
 				// An unquoted JS literal argument: `onclick="go(${jsArg(id)})"`.
 				const before = parts[i];
 				if (/^on/i.test(attr) && !/['"`]\s*$/.test(before) && isJsLiteralArg(span.expression)) return;
-				found.push({ file, line: lineOf(sf, span.expression), kind: 'html-attribute', text: `${attr}=: ${snippet(sf, span.expression)}` });
+				found.push(astSite(file, sf, 'html-attribute', span.expression, { prefix: `${attr}=: ` }));
 				return;
 			}
 			if (isHtmlSafe(span.expression, ctx)) return;
-			found.push({ file, line: lineOf(sf, span.expression), kind: 'html', text: snippet(sf, span.expression) });
+			found.push(astSite(file, sf, 'html', span.expression));
 		});
 	});
 	return found;
@@ -730,13 +787,14 @@ export function findWorkflowSinks(file, text) {
 						(ref) => !SAFE_CONTEXTS.some((re) => re.test(ref)) && !(ref.startsWith('matrix.') && isStaticMatrix(job)),
 					);
 					if (unsafe.length) {
-						found.push({ file, line: bodyLine + i, kind: 'workflow-expression', text: `${m[0]} (${unsafe.join(', ')})` });
+						const text = `${m[0]} (${unsafe.join(', ')})`;
+						found.push({ file, line: bodyLine + i, kind: 'workflow-expression', text, code: text });
 					}
 				}
 			});
 			if (viaShell) {
 				for (const h of unquotedHeredocs(body)) {
-					found.push({ file, line: bodyLine + h.offset, kind: 'workflow-heredoc', text: `<<${h.delim}` });
+					found.push({ file, line: bodyLine + h.offset, kind: 'workflow-heredoc', text: `<<${h.delim}`, code: `<<${h.delim}` });
 				}
 			}
 		}
@@ -808,7 +866,13 @@ export function findCodegenSinks(file, text) {
 		if (!ownLineEmits && DIAGNOSTIC.test(context)) return;
 		if (!ownLineEmits && !EMITS.test(context)) return;
 		if (DIAGNOSTIC.test(line)) return;
-		found.push({ file, line: i + 1, kind: 'codegen-literal', text: `${code.slice(0, 100)}  (raw: ${raw.join(', ')})` });
+		found.push({
+			file,
+			line: i + 1,
+			kind: 'codegen-literal',
+			text: `${code.slice(0, 100)}  (raw: ${raw.join(', ')})`,
+			code: `${code}  (raw: ${raw.join(', ')})`,
+		});
 	});
 	return found;
 }
@@ -871,7 +935,7 @@ export function findWeakEscapeHelpers(file, text) {
 			if (isInlineRegexEscape(node)) inlineRegex = true;
 		});
 		const ok = REGEX_SAFE_CALLS.test(name) ? inlineRegex || delegates : delegates || HTML_REFERENCES.every((re) => re.test(body));
-		if (!ok) found.push({ file, line: lineOf(sf, fn), kind: 'weak-escape-helper', text: `${name}: ${snippet(sf, fn)}` });
+		if (!ok) found.push(astSite(file, sf, 'weak-escape-helper', fn, { prefix: `${name}: ` }));
 	}
 	return found;
 }
@@ -879,23 +943,58 @@ export function findWeakEscapeHelpers(file, text) {
 // ─── Allowlist ───────────────────────────────────────────────────────────────
 
 /**
- * Compares detected sites with an allowlist of `{ at: 'file:line', reason }`.
+ * Compares detected sites with an allowlist of `{ at: 'file', in, site, reason }`.
+ *
+ * An entry names a site by its file, the function it is in (`in`, for
+ * TypeScript/JavaScript sites) and its full code (`site`: the detector's
+ * `code`, as `report()` prints it), not by its line. Code added or removed
+ * elsewhere in the file leaves the entry matching. Any change to the site's
+ * code, or moving it to another function, makes it a new, unreviewed site and
+ * its entry stale, so a reviewed site can't be swapped for another without an
+ * allowlist change. For a `shell:` option the code is the whole call, so the
+ * entry covers the program and argv the shell runs. Identical sites in one
+ * function each need their own entry, so a copy is still reported.
+ *
  * Returns the sites not allowlisted and the allowlist entries that match no
- * detected site (stale: the site moved or got fixed, so the entry must go).
+ * detected site (stale: the site changed or got fixed, so the entry must go).
  */
 export function compareWithAllowlist(sites, allowlist) {
 	for (const entry of allowlist) {
-		if (!/^[^:]+:\d+$/.test(entry.at)) throw new Error(`allowlist entry must be file:line, got ${JSON.stringify(entry.at)}`);
+		if (typeof entry.at !== 'string' || !entry.at || /:\d+$/.test(entry.at)) {
+			throw new Error(
+				`allowlist entry \`at\` must be a file path (the site is named by \`site\`, not a line), got ${JSON.stringify(entry.at)}`,
+			);
+		}
+		if (typeof entry.site !== 'string' || entry.site.trim() === '') {
+			throw new Error(`allowlist entry for ${entry.at} needs the site's code as \`site\``);
+		}
+		if (entry.in !== undefined && (typeof entry.in !== 'string' || entry.in === '')) {
+			throw new Error(`allowlist entry for ${entry.at}: \`in\` must be the enclosing function's name`);
+		}
 		if (typeof entry.reason !== 'string' || entry.reason.trim().length < 20) {
-			throw new Error(`allowlist entry ${entry.at} needs a written reason`);
+			throw new Error(`allowlist entry ${entry.at}: ${entry.site} needs a written reason`);
 		}
 	}
-	const allowed = new Set(allowlist.map((e) => e.at));
-	const at = (f) => `${f.file}:${f.line}`;
-	const unexpected = sites.filter((f) => !allowed.has(at(f)));
-	const hit = new Set(sites.map(at));
-	const stale = allowlist.filter((e) => !hit.has(e.at));
+	// Match as multisets keyed by file, function and exact code: with N
+	// identical sites in a function, N entries allow them; a surplus on either
+	// side is reported.
+	const key = (file, scope, code) => JSON.stringify([file, scope ?? null, code]);
+	const entriesByKey = groupBy(allowlist, (e) => key(e.at, e.in, e.site));
+	const sitesByKey = groupBy(sites, (f) => key(f.file, f.in, f.code));
+	const unexpected = [...sitesByKey].flatMap(([k, found]) => found.slice(entriesByKey.get(k)?.length ?? 0));
+	const stale = [...entriesByKey].flatMap(([k, entries]) => entries.slice(sitesByKey.get(k)?.length ?? 0));
 	return { unexpected, stale };
+}
+
+/** `Map.groupBy`, which Node 20 lacks. */
+function groupBy(items, keyOf) {
+	const groups = new Map();
+	for (const item of items) {
+		const k = keyOf(item);
+		if (groups.has(k)) groups.get(k).push(item);
+		else groups.set(k, [item]);
+	}
+	return groups;
 }
 
 /** Formats detected sites for an assertion message. */
@@ -903,11 +1002,16 @@ export function report(title, { unexpected, stale }) {
 	const lines = [];
 	if (unexpected.length) {
 		lines.push(`${title}: ${unexpected.length} unguarded site(s):`);
-		for (const f of unexpected) lines.push(`  ${f.file}:${f.line}  [${f.kind}]  ${f.text}`);
+		for (const f of unexpected) {
+			lines.push(`  ${f.file}:${f.line}  [${f.kind}]${f.in ? `  in ${f.in}` : ''}  ${f.text}`);
+			// The entry that would allow it, once the site is reviewed.
+			const scope = f.in ? `in: ${JSON.stringify(f.in)}, ` : '';
+			lines.push(`    allow with: { at: ${JSON.stringify(f.file)}, ${scope}site: ${JSON.stringify(f.code)}, reason: '…' }`);
+		}
 	}
 	if (stale.length) {
 		lines.push(`${title}: ${stale.length} allowlist entr${stale.length === 1 ? 'y matches' : 'ies match'} no site (remove or update):`);
-		for (const e of stale) lines.push(`  ${e.at}  (${e.reason})`);
+		for (const e of stale) lines.push(`  ${e.at}${e.in ? `  in ${e.in}` : ''}  ${e.site}  (${e.reason})`);
 	}
 	return lines.join('\n');
 }

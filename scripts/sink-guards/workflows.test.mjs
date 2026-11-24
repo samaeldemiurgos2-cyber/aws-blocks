@@ -16,8 +16,9 @@
 //
 // Contexts that carry no contributor text (run ids, the commit SHA, the event
 // name, runner paths, job results, a static matrix) are allowed inline.
-// Allowlist entries are exact file:line with a reason; an entry that stops
-// matching a site fails the test, so the list only shrinks.
+// Allowlist entries name a site by file and code (`site`, as the failure
+// report prints it), not line, with a reason; an entry that stops matching a
+// site fails the test, so the list only shrinks.
 //
 // Run: node --test scripts/sink-guards/workflows.test.mjs
 

@@ -16,8 +16,10 @@
 // is outside what it can see; route those through the wrappers above instead.
 //
 // Scans every tracked production TypeScript/JavaScript file (tests excluded) on
-// the TypeScript AST. Allowlist entries are exact file:line with a reason; an
-// entry that stops matching a site fails the test, so the list only shrinks.
+// the TypeScript AST. Allowlist entries name a site by file, enclosing function
+// (`in`) and full code (`site`), as the failure report prints them, not by
+// line, with a reason; an entry that stops matching a site fails the test, so
+// the list only shrinks.
 //
 // Run: node --test scripts/sink-guards/shell.test.mjs
 
@@ -35,43 +37,45 @@ const APP_COMMAND =
 	"Runs the app's own configured command (the developer's package.json / defineHosting() config) by design; it has the trust of the app's own code.";
 
 const ALLOWLIST = [
-	{ at: 'native/kotlin/example/typescript/cdk-blocks/scripts/cleanup.ts:12', reason: LSOF_CLEANUP },
-	{ at: 'native/kotlin/example/typescript/cdk-blocks/scripts/cleanup.ts:14', reason: LSOF_CLEANUP },
-	{ at: 'native/swift/Demo/typescript-demo/cdk-blocks/scripts/cleanup.ts:12', reason: LSOF_CLEANUP },
-	{ at: 'native/swift/Demo/typescript-demo/cdk-blocks/scripts/cleanup.ts:14', reason: LSOF_CLEANUP },
-	{ at: 'packages/core/src/scripts/cleanup.ts:17', reason: LSOF_CLEANUP },
-	{ at: 'packages/core/src/scripts/cleanup.ts:22', reason: LSOF_CLEANUP },
-	{ at: 'test-apps/native-bindings/cdk-blocks/scripts/cleanup.ts:9', reason: LSOF_CLEANUP },
-	{ at: 'test-apps/native-bindings/cdk-blocks/scripts/cleanup.ts:11', reason: LSOF_CLEANUP },
-	{ at: 'packages/core/src/hosting.ts:1230', reason: `Hosting buildCommand. ${APP_COMMAND}` },
-	{ at: 'packages/core/src/scripts/dev-server.ts:1278', reason: `Frontend dev command. ${APP_COMMAND}` },
+	{ at: 'native/kotlin/example/typescript/cdk-blocks/scripts/cleanup.ts', in: '(top level)', site: "execSync(`lsof -ti:${port}`, { encoding: 'utf-8' })", reason: LSOF_CLEANUP },
+	{ at: 'native/kotlin/example/typescript/cdk-blocks/scripts/cleanup.ts', in: '(top level)', site: 'execSync(`kill ${pid}`)', reason: LSOF_CLEANUP },
+	{ at: 'native/swift/Demo/typescript-demo/cdk-blocks/scripts/cleanup.ts', in: '(top level)', site: "execSync(`lsof -ti:${port}`, { encoding: 'utf-8' })", reason: LSOF_CLEANUP },
+	{ at: 'native/swift/Demo/typescript-demo/cdk-blocks/scripts/cleanup.ts', in: '(top level)', site: 'execSync(`kill ${pid}`)', reason: LSOF_CLEANUP },
+	{ at: 'packages/core/src/scripts/cleanup.ts', in: 'cleanup', site: "execSync(`lsof -ti:${port}`, { encoding: 'utf-8' })", reason: LSOF_CLEANUP },
+	{ at: 'packages/core/src/scripts/cleanup.ts', in: 'cleanup', site: 'execSync(`kill ${pid}`)', reason: LSOF_CLEANUP },
+	{ at: 'test-apps/native-bindings/cdk-blocks/scripts/cleanup.ts', in: '(top level)', site: "execSync(`lsof -ti:${port}`, { encoding: 'utf-8' })", reason: LSOF_CLEANUP },
+	{ at: 'test-apps/native-bindings/cdk-blocks/scripts/cleanup.ts', in: '(top level)', site: 'execSync(`kill ${pid}`)', reason: LSOF_CLEANUP },
+	{ at: 'packages/core/src/hosting.ts', in: 'Hosting.constructor', site: "execSync(props.buildCommand, { cwd: root, stdio: 'inherit', env: buildEnv, })", reason: `Hosting buildCommand. ${APP_COMMAND}` },
+	{ at: 'packages/core/src/scripts/dev-server.ts', in: 'startDevServer.spawnFrontend', site: "spawn(command, { shell: true, // Own process group on POSIX so we can reap the Vite grandchild too. detached: usePosixProcessGroups, stdio: ['ignore', 'pipe', 'pipe'], env: frontendEnv(process.env, blocksConfig), })", reason: `Frontend dev command. ${APP_COMMAND}` },
 	{
-		at: 'packages/core/src/scripts/run-command.ts:89',
+		at: 'packages/core/src/scripts/run-command.ts', in: 'spawnShellCommand', site: 'spawn(commandLine, [], { ...options, shell: true })',
 		reason: `spawnShellCommand, whose only caller is the sandbox dev-server command. ${APP_COMMAND}`,
 	},
 	{
-		at: 'packages/core/src/scripts/process-tree.ts:242',
+		at: 'packages/core/src/scripts/process-tree.ts', in: 'windowsProcessesAsync', site: "execFile( 'powershell.exe', windowsProcessQuery(pids), { encoding: 'utf-8', windowsHide: true, timeout: CIM_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 }, (_error, stdout) => resolve(parseWindowsProcesses(stdout ?? '')), )",
 		reason: 'CIM query of Windows processes: the only interpolated values are pids through Math.trunc into a fixed Get-CimInstance -Filter template, run with -NoProfile -NonInteractive and an argv array.',
 	},
-	{ at: 'packages/create-block/src/index.ts:287', reason: `npm view of an @aws-cdk-blocks/* name: ${WINDOWS_NPM}` },
-	{ at: 'packages/create-block/src/index.ts:640', reason: `npm run build -w <validated name>: ${WINDOWS_NPM}` },
-	{ at: 'packages/create-block/src/index.ts:645', reason: `npm test -w <validated name>: ${WINDOWS_NPM}` },
-	{ at: 'scripts/ci/_proc.mjs:53', reason: CI_WINDOWS },
-	{ at: 'scripts/ci/windows-template-e2e.mjs:54', reason: CI_WINDOWS },
+	{ at: 'packages/create-block/src/index.ts', in: 'resolvePublishedRange', site: "execFileSync('npm', ['view', pkgName, 'version'], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], shell: process.platform === 'win32', })", reason: `npm view of an @aws-cdk-blocks/* name: ${WINDOWS_NPM}` },
+	{ at: 'packages/create-block/src/index.ts', in: 'verify', site: "execFileSync('npm', ['run', 'build', '-w', pkgName], { cwd: root, stdio: 'inherit', shell: process.platform === 'win32', })", reason: `npm run build -w <validated name>: ${WINDOWS_NPM}` },
+	{ at: 'packages/create-block/src/index.ts', in: 'verify', site: "execFileSync('npm', ['test', '-w', pkgName], { cwd: root, stdio: 'inherit', shell: process.platform === 'win32', })", reason: `npm test -w <validated name>: ${WINDOWS_NPM}` },
+	{ at: 'scripts/ci/_proc.mjs', in: 'runSpawn', site: "spawnSync(cmd, args, { stdio: 'inherit', shell: isWin, ...opts })", reason: CI_WINDOWS },
+	{ at: 'scripts/ci/_proc.mjs', in: 'runSpawn', site: "spawnSync(cmd, args, { stdio: 'inherit', shell: isWin, ...opts })", reason: CI_WINDOWS },
+	{ at: 'scripts/ci/windows-template-e2e.mjs', in: 'startUntilReady', site: "spawn(cmd, args, { shell: isWin, detached: !isWin, stdio: 'inherit', ...opts })", reason: CI_WINDOWS },
+	{ at: 'scripts/ci/windows-template-e2e.mjs', in: 'startUntilReady', site: "spawn(cmd, args, { shell: isWin, detached: !isWin, stdio: 'inherit', ...opts })", reason: CI_WINDOWS },
 	{
-		at: 'scripts/agent-bench/steps/4-judge.ts:136',
+		at: 'scripts/agent-bench/steps/4-judge.ts', in: 'assertNoSpecLeak', site: "execSync( `find ${shellQuote(dir)} \\\\( -name bench-tests -o -regextype posix-extended -regex '.*\\\\.spec\\\\.[cm]?[jt]sx?$' \\\\) -print`, { encoding: 'utf-8' }, )",
 		reason: 'The only value is the judge copy directory, passed through shellQuote() (single-quoted, embedded quotes escaped).',
 	},
 	{
-		at: 'scripts/agent-bench/steps/4-judge.ts:270',
+		at: 'scripts/agent-bench/steps/4-judge.ts', in: 'collectBlocksImports', site: 'execSync( `grep -rnE "[\'\\\\"](@aws-cdk-blocks/|aws-cdk-blocks(/|[\'\\\\"]))" . --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" --include="*.mjs" --include="*.cjs" ${excludeArgs} | grep -Ew "import|from|require"`, { cwd: workspace, encoding: \'utf-8\', maxBuffer: 4 * 1024 * 1024 }, )',
 		reason: 'The only interpolation is --exclude-dir flags built from the constant STAGE_EXCLUDE_DIRS set in this script.',
 	},
 	{
-		at: 'scripts/monte-carlo.ts:54',
+		at: 'scripts/monte-carlo.ts', in: 'gh', site: 'execSync(`gh ${cmd}`, { encoding: "utf-8" })',
 		reason: 'Maintainer planning script: every gh command is a literal in this file, interpolating only the ORG constant and numeric ids.',
 	},
 	{
-		at: 'scripts/publish/publish.ts:110',
+		at: 'scripts/publish/publish.ts', in: 'packPackage', site: 'execSync(`npm pack --pack-destination ${JSON.stringify(packDir)}`, { cwd: pkg.dirPath, encoding: "utf-8", })',
 		reason: 'The only value is a mkdtemp() directory under os.tmpdir() that this script just created, double-quoted.',
 	},
 ];

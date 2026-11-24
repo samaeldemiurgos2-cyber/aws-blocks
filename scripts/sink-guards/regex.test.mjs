@@ -8,8 +8,9 @@
 //
 // Scans every tracked production TypeScript/JavaScript file (tests excluded) on
 // the TypeScript AST. A site that is safe for a reason the scan can't see goes
-// in ALLOWLIST by exact file:line with that reason; an entry that stops
-// matching a site fails the test, so the list only shrinks.
+// in ALLOWLIST by file, enclosing function (`in`) and full code (`site`), as the
+// failure report prints them, not by line, with that reason; an entry that
+// stops matching a site fails the test, so the list only shrinks.
 //
 // Run: node --test scripts/sink-guards/regex.test.mjs
 
@@ -26,43 +27,43 @@ import {
 
 const ALLOWLIST = [
 	{
-		at: 'packages/blocks/src/cli/config.ts:242',
+		at: 'packages/blocks/src/cli/config.ts', in: 'frontendPortWarning', site: 'new RegExp(`(^|\\\\D)${port}(\\\\D|$)`)',
 		reason: '`port` is a number (frontendPort ?? DEFAULT_FRONTEND_PORT), so the pattern holds digits only.',
 	},
 	{
-		at: 'packages/core/src/cors.ts:166',
+		at: 'packages/core/src/cors.ts', in: 'literalOriginPattern', site: "new RegExp(escapeOriginToPattern(valid ? canonicalOrigin(origin) : origin), 'i')",
 		reason: 'literalOriginPattern(): the origin goes through escapeOriginToPattern(), which escapes every metacharacter and anchors with ^…$.',
 	},
 	{
-		at: 'packages/core/src/cors.ts:372',
+		at: 'packages/core/src/cors.ts', in: 'validateCorsOriginEntry', site: 'new RegExp(entry)',
 		reason: 'validateCorsOriginEntry() compiles a user regex entry on its own only to check it is valid; the result is discarded and never matched.',
 	},
 	{
-		at: 'packages/core/src/cors.ts:471',
+		at: 'packages/core/src/cors.ts', in: 'parseCorsPatterns', site: 'new RegExp(`^(?:${entry})$`)',
 		reason: 'allowedOrigins regex entries are intentionally regexes: validateCorsOriginEntry() runs first (bare dots, globs, nested quantifiers, standalone compile) and the entry is anchored as ^(?:…)$.',
 	},
 	{
-		at: 'packages/core/src/raw-route.ts:451',
+		at: 'packages/core/src/raw-route.ts', in: 'compilePath', site: 'new RegExp(fullPattern)',
 		reason: 'Built one character at a time: every character in REGEX_SPECIAL is escaped and `{` `}` `*` are parsed as params and the wildcard.',
 	},
 	{
-		at: 'packages/core/src/scripts/cdk-output.ts:470',
+		at: 'packages/core/src/scripts/cdk-output.ts', in: '(top level)', site: "new RegExp( [ /Detected change/, /Detected file changes during deployment\\. Invoking 'cdk deploy' again/, /Triggering initial 'cdk deploy'/, /^\\s*'watch' is observing (?:directory|the file) '.*' for changes\\s*$/, /^\\s*'watch' received the 'ready' event\\. From now on, all file changes will trigger a deployment\\s*$/, /^\\s*root directory used for 'watch' is: /, /^\\s*'(?:include|exclude)' patterns for 'watch': /, ] .map((r) => r.source) .join('|'), )",
 		reason: 'Joins the `.source` of a fixed array of regex literals written in this file.',
 	},
 	{
-		at: 'packages/core/src/scripts/credential-guidance.ts:59',
+		at: 'packages/core/src/scripts/credential-guidance.ts', in: '(top level)', site: "new RegExp(`\\\\b(${Object.keys(NETWORK_ERRORS).join('|')})\\\\b`)",
 		reason: 'Joins the keys of the NETWORK_ERRORS object literal (Node error codes such as ECONNREFUSED) declared in this file.',
 	},
 	{
-		at: 'packages/hosting/src/adapters/nextjs.ts:1054',
+		at: 'packages/hosting/src/adapters/nextjs.ts', in: 'findOverride', site: 'new RegExp(`\\\\b${key}\\\\s*:\\\\s*[\'"\\`]${escapeRegex(value)}[\'"\\`]`)',
 		reason: '`key` is one of the literal OpenNext option names passed by the callers in this file; `value` goes through escapeRegex().',
 	},
 	{
-		at: 'packages/hosting/src/constructs/proxy_limits.ts:66',
+		at: 'packages/hosting/src/constructs/proxy_limits.ts', in: 'behaviorMatcher', site: "new RegExp(`^${pattern.split('*').map((part) => part.replace(/[.+?^${}()|[\\]\\\\]/g, '\\\\$&')).join('.*')}$`)",
 		reason: 'Glob compilation: each part between `*` is escaped (the class omits `*` only because the value is split on it), `*` becomes `.*`.',
 	},
 	{
-		at: 'scripts/ci/e2e-teardown.mjs:166',
+		at: 'scripts/ci/e2e-teardown.mjs', in: 'main.token', site: 'new RegExp(`(^|-)${t}(-|$)`)',
 		reason: 'The sandbox id and stack suffix are checked against /^[A-Za-z0-9-]+$/ before this token is built.',
 	},
 ];

@@ -18,8 +18,9 @@
 // There is no Kotlin/Swift/Dart parser in the Node toolchain, so this is a
 // line scan: a line that hands text to the generated source and opens a quoted
 // literal right before a raw interpolation (`"\"$x"`, `"\"\(x)"`, `"'$x"`).
-// Allowlist entries are exact file:line with a reason; an entry that stops
-// matching a site fails the test, so the list only shrinks.
+// Allowlist entries name a site by file and full code (`site`, as the failure
+// report prints it), not line, with a reason; an entry that stops matching a
+// site fails the test, so the list only shrinks.
 //
 // Run: node --test scripts/sink-guards/codegen.test.mjs
 
@@ -34,17 +35,32 @@ const SWIFT_CONTENT_LOCAL = (v) =>
 
 const ALLOWLIST = [
 	{
-		at: 'native/dart/packages/blocks_codegen/lib/src/generator.dart:2171',
+		at: 'native/dart/packages/blocks_codegen/lib/src/generator.dart', site: 'buf.writeln("  String toString() => \'$label($props)\';");  (raw: label)',
 		reason: "label is the generated class name, a Dart identifier, with its `$` escaped on the line above, so it holds no quote or interpolation.",
 	},
-	...[583, 678].map((l) => ({ at: `native/swift/Sources/BlocksCodegen/SwiftCodeGenerator.swift:${l}`, reason: SWIFT_TYPE_NAME })),
 	{
-		at: 'native/swift/Sources/BlocksCodegen/SwiftCodeGenerator.swift:598',
+		at: 'native/swift/Sources/BlocksCodegen/SwiftCodeGenerator.swift',
+		site: '+ " in: container, debugDescription: \\"\\(errMsg)\\")"  (raw: errMsg)',
+		reason: SWIFT_TYPE_NAME,
+	},
+	{
+		at: 'native/swift/Sources/BlocksCodegen/SwiftCodeGenerator.swift',
+		site: '+ " decoder.codingPath, debugDescription: \\"\\(errDesc)\\"))"  (raw: errDesc)',
+		reason: SWIFT_TYPE_NAME,
+	},
+	{
+		at: 'native/swift/Sources/BlocksCodegen/SwiftCodeGenerator.swift', site: '+ " in: container, debugDescription: \\"\\(defErr)\\")"  (raw: defErr)',
 		reason: 'Decoding error text that is a constant apart from the runtime `\\(disc)` interpolation it writes into the generated code.',
 	},
-	...[1077, 1079, 1098, 1100].map((l) => ({ at: `native/swift/Sources/BlocksCodegen/SwiftCodeGenerator.swift:${l}`, reason: SWIFT_CONTENT_LOCAL('key') })),
-	{ at: 'native/swift/Sources/BlocksCodegen/SwiftCodeGenerator.swift:1163', reason: SWIFT_CONTENT_LOCAL('escaped') },
-	{ at: 'native/swift/Sources/BlocksCodegen/SwiftCodeGenerator+EntryPoint.swift:112', reason: SWIFT_CONTENT_LOCAL('name and url') },
+	// The DynamicKey encode/decode lines of a generated custom Codable conformance.
+	...[
+		'body.append("        try c.encode(self.\\(safe), forKey: DynamicKey(stringValue: \\"\\(key)\\")!)")  (raw: key)',
+		'body.append("        try c.encodeIfPresent(self.\\(safe), forKey: DynamicKey(stringValue: \\"\\(key)\\")!)")  (raw: key)',
+		'body.append("        self.\\(safe) = try c.decode(\\(baseType).self, forKey: DynamicKey(stringValue: \\"\\(key)\\")!)")  (raw: key)',
+		'body.append("        self.\\(safe) = try c.decodeIfPresent(\\(baseType).self, forKey: DynamicKey(stringValue: \\"\\(key)\\")!)")  (raw: key)',
+	].map((site) => ({ at: 'native/swift/Sources/BlocksCodegen/SwiftCodeGenerator.swift', site, reason: SWIFT_CONTENT_LOCAL('key') })),
+	{ at: 'native/swift/Sources/BlocksCodegen/SwiftCodeGenerator.swift', site: '"guard \\(valueVar).range(of: \\"\\(escaped)\\","  (raw: escaped)', reason: SWIFT_CONTENT_LOCAL('escaped') },
+	{ at: 'native/swift/Sources/BlocksCodegen/SwiftCodeGenerator+EntryPoint.swift', site: 'lines.append("    public static let \\(propertyName) = \\(runtimePrefix)BlocksServer(name: \\"\\(name)\\", url: \\"\\(url)\\")")  (raw: name, url)', reason: SWIFT_CONTENT_LOCAL('name and url') },
 ];
 
 describe('codegen sink detector', () => {
