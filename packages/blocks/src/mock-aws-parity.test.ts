@@ -54,7 +54,6 @@ const PARITY_ALLOWLIST: Record<string, Partial<Record<Rule, string>>> = {
 	'bb-dashboard': { paritySuite: 'No runtime methods that take caller input.' },
 	'bb-database': { paritySuite: 'Open PRs #716, #1386 and #1432 rewrite both entries.' },
 	'bb-knowledge-base': { paritySuite: 'Follow-up: retrieve() filter values are not validated the same way. Open PR #427 changes index.mock.ts.' },
-	'bb-secret': { paritySuite: 'Follow-up: get() version handles and put() values differ. Open PRs #844, #1116 and #1412 change both entries.' },
 	'bb-tracer': { paritySuite: 'Follow-up: samplingRate is range-checked by the mock only. Open PR #1322 changes index.mock.ts.' },
 };
 

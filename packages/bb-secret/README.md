@@ -85,11 +85,12 @@ async function rotateToken(nextValue: string): Promise<void> {
 
 | Constant | `error.name` | Thrown when |
 |----------|--------------|-------------|
-| `SecretErrors.ValidationFailed` | `ValidationFailedException` | With a `schema`: `put()` is given a value that fails the schema, or `get()` reads a stored value that fails the schema or is not valid JSON. |
+| `SecretErrors.ValidationFailed` | `ValidationFailedException` | With a `schema`: `put()` is given a value that fails the schema, or `get()` reads a stored value that fails the schema or is not valid JSON. With or without a schema: `put()` is given a value Secrets Manager rejects, which is a non-string without a schema, an empty string, or a stored value over 65,536 UTF-8 bytes (with a schema, the JSON text is what is stored). The local mock rejects the same values. |
 | `SecretErrors.SecretNotFound` | `ResourceNotFoundException` | `put()` on AWS: the Secrets Manager secret does not exist. |
 | `SecretErrors.NotSupported` | `NotSupportedException` | `Secret` is instantiated in browser/client code (it runs server-side only), or a deployed `Secret` has no registered secret ARN. |
 
 - `get()` returns `null` for a missing value; it does not throw. On AWS that `null` is cached like any other value, so a value set afterwards is seen once the cache entry expires (`cacheTtlSeconds`).
+- `get({ version })` also returns `null` for a `versionId` that names no version, including one Secrets Manager cannot accept (fewer than 32 or more than 64 characters). That case is answered without calling Secrets Manager.
 - A schema failure's message is always `ValidationFailedException: The secret value did not match the schema`. It never contains the secret value, the failing field or the schema library's issue text. The original issues and the first failing path are on the error's non-enumerable `cause` (`cause.issues`, `cause.path`) for server-side logging.
 
 ## Examples
@@ -275,7 +276,7 @@ For anything deeper than the current/previous pair (full history, custom staging
 - **Billing:** $0.40 per secret per month (prorated hourly) + $0.05 per 10,000 API calls. No free tier.
 - **Latency:** low-tens-of-ms per API call. The runtime caches the fetched value in-process for `cacheTtlSeconds`, so steady-state reads hit the cache, not the API.
 - **Throughput:** GetSecretValue scales to thousands of requests/sec per account (default quotas, raisable).
-- **Value size limit:** 64 KB per secret value.
+- **Value size limit:** 65,536 bytes (64 KB) per stored value. `put()` rejects a larger value with `SecretErrors.ValidationFailed`, locally and on AWS.
 - **Version history:** `listVersions()` returns the labeled versions — current + previous. Secrets Manager retains additional unlabeled versions internally (until >100, never removing any created in the last 24h).
 
 ## Local development

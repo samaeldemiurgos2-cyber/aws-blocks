@@ -103,6 +103,20 @@ export function validateAppSettingOptions<T>(
 	}
 }
 
+/**
+ * Reject an empty string for a `secret: true` setting.
+ *
+ * `get()` throws {@link AppSettingErrors.ParameterNotFound} for an empty secret
+ * on both paths, so `put('')` must not store one: it would succeed and leave
+ * every later read failing. Shared by the mock and AWS `put()` paths and called
+ * at the same point in both (after schema validation, before the size check).
+ */
+export function assertSecretValueNotEmpty(value: unknown, isSecret: boolean): void {
+	if (isSecret && value === '') {
+		throw prefixedBlocksError(AppSettingErrors.ValidationFailed, 'A secret value must not be empty');
+	}
+}
+
 /** SSM standard-tier parameter value limit, in bytes. */
 export const MAX_VALUE_BYTES = 4096;
 

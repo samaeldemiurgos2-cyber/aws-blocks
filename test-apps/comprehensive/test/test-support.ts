@@ -77,6 +77,7 @@ export const TEST_SUPPORT_METHODS = [
   'secretPutNamed',
   'secretGetApiKeyPrevious',
   'secretListApiKeyVersions',
+  'secretGetApiKeyVersion',
   'secretGetUnset',
   'secretGetGenerated',
   'secretWriteProbeOmitted',

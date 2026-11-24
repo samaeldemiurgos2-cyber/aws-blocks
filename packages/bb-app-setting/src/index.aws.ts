@@ -13,7 +13,7 @@ import type { ScopeParent } from '@aws-cdk-blocks/core';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { AppSettingErrors } from './errors.js';
 import type { AppSettingOptions, InternalAppSettingOptions } from './types.js';
-import { assertValueWithinSizeLimit } from './validation.js';
+import { assertSecretValueNotEmpty, assertValueWithinSizeLimit } from './validation.js';
 import { BB_NAME, BB_VERSION } from './version.js';
 import { Logger } from '@aws-cdk-blocks/bb-logger';
 import type { ChildLogger } from '@aws-cdk-blocks/bb-logger';
@@ -160,6 +160,7 @@ export class AppSetting<T = string> extends Scope {
 	 *
 	 * @param value - The new value to store.
 	 * @throws {AppSettingErrors.ValidationFailed} If schema validation fails or value exceeds 4 KB.
+	 *   Also if a `secret: true` setting is given an empty string, which `get()` would refuse.
 	 *
 	 * @example
 	 * ```typescript
@@ -169,6 +170,8 @@ export class AppSetting<T = string> extends Scope {
 	 */
 	async put(value: T): Promise<void> {
 		await validateSchema(this.schema, value);
+		// get() refuses an empty secret; reject it here, as the mock does.
+		assertSecretValueNotEmpty(value, this.isSecret);
 
 		const serialized = JSON.stringify(value);
 		// Same check, at the same point, as the mock (see validation.ts): an

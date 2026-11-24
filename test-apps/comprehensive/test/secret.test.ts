@@ -126,6 +126,39 @@ export function secretTests(_getApi: () => typeof apiType) {
       assert.ok(versions.some((v) => v.stages.includes('AWSPREVIOUS')));
     });
 
+    // Values and version ids Secrets Manager rejects fail (or read null) the
+    // same way locally and on AWS, with a named error rather than a raw 500.
+    test('Secret - put rejects an empty value with ValidationFailedException', async () => {
+      const { testSupport, secret } = await getTestSupport();
+      await assert.rejects(() => testSupport.secretPutApiKey(secret, ''), /ValidationFailedException/);
+    });
+
+    test('Secret - put rejects a value over 65,536 bytes with ValidationFailedException', async () => {
+      const { testSupport, secret } = await getTestSupport();
+      await assert.rejects(
+        () => testSupport.secretPutApiKey(secret, 'a'.repeat(70 * 1024)),
+        /ValidationFailedException/,
+      );
+    });
+
+    // Pins that the limit counts UTF-8 bytes, not characters: 21,846 three-byte
+    // characters are under 65,536 characters but 65,538 bytes, which
+    // PutSecretValue rejects (LimitExceededException) on AWS.
+    test('Secret - put rejects a multi-byte value over 65,536 bytes but under 65,536 characters', async () => {
+      const { testSupport, secret } = await getTestSupport();
+      await assert.rejects(
+        () => testSupport.secretPutApiKey(secret, '€'.repeat(21_846)),
+        /ValidationFailedException/,
+      );
+    });
+
+    test('Secret - get with a malformed or unknown versionId reads null', async () => {
+      const { testSupport, secret } = await getTestSupport();
+      assert.strictEqual((await testSupport.secretGetApiKeyVersion(secret, 'nope')).value, null);
+      const unknown = '00000000-0000-4000-8000-000000000000';
+      assert.strictEqual((await testSupport.secretGetApiKeyVersion(secret, unknown)).value, null);
+    });
+
     // allowRuntimeWrite matrix — the three cases, asserted end to end.
     //
     // Build/type behavior is proven in the backend module itself

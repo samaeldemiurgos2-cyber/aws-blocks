@@ -182,7 +182,11 @@ The read surface is designed to grow without breaking:
   the richer subtype — so a `listVersions()` item passes straight to `get()`.
 - `SecretVersion` is a plain structural handle; the intended source is
   `listVersions()`, but a hand-built `{ versionId }` also type-checks. A
-  non-existent id is harmless — it simply reads back as `null`.
+  non-existent id is harmless — it simply reads back as `null`. So does an id
+  Secrets Manager cannot accept (outside 32-64 characters), or, over RPC, a
+  handle without a string `versionId`: both layers return `null` without a
+  lookup (`namesNoVersion()` in `src/validation.ts`), where `GetSecretValue`
+  would fail with `ValidationException` or, with no id, read the current value.
 
 Deeper access (reading by arbitrary id outside the labeled window, custom
 staging labels, full history) is intentionally **not** proxied — use the AWS SDK
@@ -209,6 +213,24 @@ When `options.schema` (any `StandardSchemaV1`) is provided:
 Without a schema the value is an opaque `string` stored/returned verbatim. The
 schema library is never a runtime dependency of this package — it is the
 consumer's choice (`zod` is a `devDependency` here, used only by tests).
+
+## Value limits
+
+`put()` rejects, with `SecretErrors.ValidationFailed`, every value
+`PutSecretValue` would reject, so a write fails the same way locally and on AWS
+instead of surfacing a raw `ValidationException` / `SerializationException`
+from the SDK. `serializeSecretValue()` in `src/validation.ts` runs in both
+layers after schema validation and before the write:
+
+- without a schema the value must be a string (an object reaches the SDK as a
+  structure and fails with `SerializationException`);
+- the stored text (the JSON text with a schema) must be 1 to 65,536 UTF-8
+  bytes. Secrets Manager also caps it at 65,536 characters, which the byte
+  check implies.
+
+The mock still stores the value itself, not the serialized text.
+`src/parity.test.ts` runs the same `put()` and `get({ version })` cases against
+both layers, with the SDK stubbed to answer as Secrets Manager does.
 
 ## Mock ↔ AWS differences
 

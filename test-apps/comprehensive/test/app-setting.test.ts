@@ -78,5 +78,13 @@ export function appSettingTests(getApi: () => typeof apiType) {
       // Restore original
       await testSupport.settingPutSecret(secret, original);
     });
+
+    test('AppSetting - secret setting rejects an empty value and keeps the stored one', async () => {
+      const { testSupport, secret } = await getTestSupport();
+      const before = (await testSupport.settingGetSecret(secret)).value;
+      await assert.rejects(() => testSupport.settingPutSecret(secret, ''), /ValidationFailedException/);
+      const { value } = await testSupport.settingGetSecret(secret);
+      assert.strictEqual(value, before);
+    });
   });
 }

@@ -16,7 +16,7 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { SecretErrors } from './errors.js';
 import { secretArnConfigKey } from './internal-shared.js';
 import type { ExternalSecretRef, SecretOptions, SecretReadOptions, SecretVersion, SecretVersionInfo } from './types.js';
-import { validateSchema } from './validation.js';
+import { namesNoVersion, serializeSecretValue, validateSchema } from './validation.js';
 import { BB_NAME, BB_VERSION } from './version.js';
 
 // Re-export public types and errors (canonical source)
@@ -181,6 +181,8 @@ class SecretImpl<T = string> extends Scope {
 	 *
 	 * @param value - The new secret value.
 	 * @throws {SecretErrors.ValidationFailed} If a schema is configured and the value fails validation.
+	 *   Also, with or without a schema, if Secrets Manager would reject the value: a non-string
+	 *   without a schema, an empty string, or more than 65,536 UTF-8 bytes as stored.
 	 *   The error message never contains the value or the schema library's issue text
 	 *   or the failing path, which a record schema takes from the value's keys; the
 	 *   original issues and path are on the non-enumerable `cause` for server-side logs.
@@ -281,7 +283,13 @@ class SecretImpl<T = string> extends Scope {
 	 */
 	async get(options?: SecretReadOptions): Promise<T | null> {
 		const secretArn = this.resolveSecretArn();
-		const key = cacheKey(options?.version);
+		const version = options?.version;
+		// A handle Secrets Manager cannot accept as a VersionId names no version:
+		// return null as for an unknown id, instead of a raw ValidationException
+		// (or, with no string id, silently reading the current value). Same check
+		// as the mock; see validation.ts.
+		if (namesNoVersion(version)) return null;
+		const key = cacheKey(version);
 
 		// Serve the cached raw value when present and not expired; otherwise fetch
 		// from Secrets Manager and (re)populate the entry. The cache holds the raw
@@ -297,7 +305,7 @@ class SecretImpl<T = string> extends Scope {
 			// Map the version selector to the SDK's VersionStage / VersionId params.
 			// 'current' (default) → omit (AWSCURRENT); 'previous' → AWSPREVIOUS stage;
 			// a SecretVersion → its versionId.
-			const selector = versionSelector(options?.version);
+			const selector = versionSelector(version);
 			// Snapshot the invalidation generation: if a put() clears the cache while
 			// this fetch is in flight, the result predates the write and is returned
 			// to this caller but not cached.
@@ -376,13 +384,12 @@ class SecretImpl<T = string> extends Scope {
 	 * `allowRuntimeWrite: true` (see the constructor).
 	 */
 	async #put(value: T): Promise<void> {
-		let serialized: string;
 		if (this.schema) {
 			await validateSchema(this.schema, value);
-			serialized = JSON.stringify(value);
-		} else {
-			serialized = value as unknown as string;
 		}
+		// Same check, at the same point, as the mock (see validation.ts): a value
+		// Secrets Manager would reject fails with ValidationFailed before the call.
+		const serialized = serializeSecretValue(value, this.schema !== undefined);
 
 		const secretArn = this.resolveSecretArn();
 		try {

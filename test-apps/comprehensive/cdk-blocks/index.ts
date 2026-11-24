@@ -3648,6 +3648,11 @@ export const testSupport = testSupportSecret
           return versions.map((v) => ({ versionId: v.versionId, stages: v.stages }));
         },
 
+        async secretGetApiKeyVersion(secret: string, versionId: string) {
+          await requireSecret(secret);
+          return { value: await apiKeySecret.get({ version: { versionId } }) };
+        },
+
         // Unset secret: never written, so get() must return null (not a random
         // generated string) on AWS — the "unset reads null" contract.
         async secretGetUnset(secret: string) {

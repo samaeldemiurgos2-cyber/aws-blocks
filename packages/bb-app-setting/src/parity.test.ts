@@ -78,6 +78,13 @@ const cases: Case[] = [
 		value: 'b'.repeat(5000),
 		error: AppSettingErrors.ValidationFailed,
 	},
+	{
+		// get() refuses an empty secret, so put() must not store one.
+		label: 'an empty string for a secret setting',
+		options: { secret: true },
+		value: '',
+		error: AppSettingErrors.ValidationFailed,
+	},
 ];
 
 describe('AppSetting.put() validates the same input the same way on mock and AWS', () => {

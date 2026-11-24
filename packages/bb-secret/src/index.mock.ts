@@ -8,11 +8,11 @@ import type { ChildLogger } from '@aws-cdk-blocks/bb-logger';
 import { Logger } from '@aws-cdk-blocks/bb-logger';
 import type { ScopeParent } from '@aws-cdk-blocks/core';
 import { blocksError, registerSdkIdentifiers, Scope } from '@aws-cdk-blocks/core';
-import { getMockDataDir, assertNotMockInDeployedEnv } from '@aws-cdk-blocks/core/bb-utils';
+import { assertNotMockInDeployedEnv, getMockDataDir } from '@aws-cdk-blocks/core/bb-utils';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { SecretErrors } from './errors.js';
 import type { ExternalSecretRef, SecretOptions, SecretReadOptions, SecretVersion, SecretVersionInfo } from './types.js';
-import { validateSchema } from './validation.js';
+import { namesNoVersion, serializeSecretValue, validateSchema } from './validation.js';
 import { BB_NAME, BB_VERSION } from './version.js';
 
 // Fail closed if this mock entry loads in a deployed env — see assertNotMockInDeployedEnv.
@@ -127,6 +127,8 @@ class SecretImpl<T = string> extends Scope {
 	 *
 	 * @param value - The new secret value.
 	 * @throws {SecretErrors.ValidationFailed} If a schema is configured and the value fails validation.
+	 *   Also, with or without a schema, if Secrets Manager would reject the value: a non-string
+	 *   without a schema, an empty string, or more than 65,536 UTF-8 bytes as stored.
 	 *   The error message never contains the value or the schema library's issue text
 	 *   or the failing path, which a record schema takes from the value's keys; the
 	 *   original issues and path are on the non-enumerable `cause` for server-side logs.
@@ -228,6 +230,9 @@ class SecretImpl<T = string> extends Scope {
 	 * ```
 	 */
 	async get(options?: SecretReadOptions): Promise<T | null> {
+		// Same check, at the same point, as the AWS entry (see validation.ts): a
+		// handle Secrets Manager cannot accept as a VersionId names no version.
+		if (namesNoVersion(options?.version)) return null;
 		const raw = this.resolveStoredValue(options?.version);
 		if (raw === undefined) return null;
 
@@ -270,6 +275,10 @@ class SecretImpl<T = string> extends Scope {
 		if (this.schema) {
 			await validateSchema(this.schema, value);
 		}
+		// Same check, at the same point, as the AWS entry (see validation.ts):
+		// reject what Secrets Manager's PutSecretValue would. The mock still
+		// stores the value itself, not the serialized text.
+		serializeSecretValue(value, this.schema !== undefined);
 
 		// Live value in the shared settings file (human-editable via the route).
 		const settings = readSettings(this);
