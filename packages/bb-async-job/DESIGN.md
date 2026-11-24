@@ -69,9 +69,9 @@ Local Mock
 
 ### D-AJ-4: Client-side validation before enqueue
 
-**Decision:** `submit()`/`submitBatch()` validate the schema (when configured) and the 256 KB payload size before calling SQS. `submitBatch` rejects an empty batch first, then validates *every* payload before enqueuing any of them.
+**Decision:** `submit()`/`submitBatch()` validate `delaySeconds` (an integer from 0 to 900, the range SQS accepts), the schema (when configured) and the 256 KB payload size before calling SQS. `submitBatch` rejects an empty or oversized batch first, then the delay, then validates *every* payload before enqueuing any of them. The delay check lives in `src/validation.ts` and both entries call it; `src/parity.test.ts` runs the same cases against both.
 
-**Rationale:** Failing fast on the caller's side produces a precise typed error (`PayloadTooLarge`, `ValidationFailed`, `BatchEmpty`) instead of a generic SQS rejection, and avoids a network round-trip for input that cannot succeed. Validating the whole batch up front means one bad payload fails the call without half-submitting the batch. The mock applies identical checks so violations surface the same `error.name` in local dev.
+**Rationale:** Failing fast on the caller's side produces a precise typed error (`PayloadTooLarge`, `ValidationFailed`, `BatchEmpty`) instead of a generic SQS rejection, and avoids a network round-trip for input that cannot succeed. Validating the whole batch up front means one bad payload fails the call without half-submitting the batch. The mock applies identical checks so violations surface the same `error.name` in local dev. Without the delay check, the mock ran a negative delay immediately and waited out any delay above 900 s, while SQS rejected both with `InvalidParameterValue`, which reached an RPC client as a nameless 500 (or, from `submitBatch`, as `BatchSubmitFailed` for every entry).
 
 ### D-AJ-4a: `submitBatch` auto-chunks; a multi-chunk submit is not atomic
 

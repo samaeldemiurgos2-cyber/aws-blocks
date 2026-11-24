@@ -22,6 +22,7 @@ import type {
 } from './types.js';
 import { AsyncJobErrors, BatchSubmitFailedError } from './errors.js';
 import { JobStatusTracker, statusNotTrackedError } from './status.js';
+import { validateDelaySeconds } from './validation.js';
 import { BB_NAME, BB_VERSION } from './version.js';
 import { Logger } from '@aws-cdk-blocks/bb-logger';
 import type { ChildLogger } from '@aws-cdk-blocks/bb-logger';
@@ -442,6 +443,7 @@ export class AsyncJob<T = unknown> extends Scope {
 
 	async submit(payload: T, options?: SubmitOptions): Promise<{ jobId: string }> {
 		this.ensureQueueUrl();
+		validateDelaySeconds(options?.delaySeconds);
 		const messageBody = await this.validatePayload(payload);
 
 		const result = await this._sqsClient.send(new SendMessageCommand({
@@ -569,6 +571,10 @@ export class AsyncJob<T = unknown> extends Scope {
 		if (payloads.length > MAX_BATCH_PAYLOADS) {
 			throw blocksError(AsyncJobErrors.BatchTooLarge, `Batch contains ${payloads.length} payloads, exceeds the ${MAX_BATCH_PAYLOADS} per-call limit`);
 		}
+
+		// One delay applies to every entry, so an invalid one would make SQS reject
+		// them all; check it up front instead of wrapping that in BatchSubmitFailed.
+		validateDelaySeconds(options?.delaySeconds);
 
 		// Validate and serialize every payload before enqueuing anything, so one bad
 		// payload fails the whole call rather than half-submitting the batch.

@@ -151,6 +151,35 @@ export function asyncJobTests(getApi: () => typeof apiType) {
     });
 
     // delaySeconds Tests
+    test('AsyncJob - out-of-range or fractional delaySeconds throws ValidationFailed over RPC', async () => {
+      const api = getApi();
+      const testId = Date.now().toString(36);
+      const key = `invalid-delay-${testId}`;
+      const items = [
+        { key: `invalid-batch-delay-${testId}-0`, value: 'a' },
+        { key: `invalid-batch-delay-${testId}-1`, value: 'b' },
+      ];
+
+      for (const delaySeconds of [-1, 1.5, 901]) {
+        await assert.rejects(
+          () => api.asyncJobSubmitDelayed(key, 'never-runs', delaySeconds),
+          (e: unknown) => isBlocksError(e, AsyncJobErrors.ValidationFailed),
+          `submit with delaySeconds ${delaySeconds}`
+        );
+        await assert.rejects(
+          () => api.asyncJobSubmitBatchDelayed(items, delaySeconds),
+          (e: unknown) => isBlocksError(e, AsyncJobErrors.ValidationFailed),
+          `submitBatch with delaySeconds ${delaySeconds}`
+        );
+      }
+
+      // Nothing was queued, so no handler wrote a result (a -1 delay used to run immediately).
+      await setTimeout(500);
+      for (const resultKey of [key, ...items.map((item) => item.key)]) {
+        assert.strictEqual(await api.asyncJobGetResult(resultKey), null);
+      }
+    });
+
     test('AsyncJob - submit with delaySeconds defers execution', async () => {
       const api = getApi();
       const testId = Date.now().toString(36);
