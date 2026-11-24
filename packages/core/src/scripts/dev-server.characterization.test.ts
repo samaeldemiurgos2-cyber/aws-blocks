@@ -290,6 +290,16 @@ const CASES: Record<string, Case> = {
   'raw route out-of-range status': { method: 'GET', path: '/bad-status' },
   'raw route with the wrong method falls through to the frontend': { method: 'DELETE', path: '/users/1' },
   'unknown path falls through to the frontend': { method: 'GET', path: '/not-a-route' },
+  // API Gateway refuses a path with malformed percent-encoding with a 400 before
+  // the Lambda runs, so the handler never sees the undecodable value.
+  'raw route param with malformed percent-encoding': { method: 'GET', path: '/users/%E0%A4%A' },
+  'raw route wildcard with malformed percent-encoding': { method: 'GET', path: '/files/a/%E0%A4%A' },
+  'RPC namespace with malformed percent-encoding': rpc(rpcBody('api.echo', ['hi']), {}, '/cdk-blocks/api/%E0%A4%A'),
+  'raw route param with a trailing bare percent': { method: 'GET', path: '/users/100%' },
+  // Well-formed escapes that aren't valid UTF-8 pass API Gateway and reach the
+  // Lambda, where the param keeps its raw text (see extractParams in raw-route.ts).
+  'raw route param with a non-UTF-8 escape reaches the handler': { method: 'GET', path: '/users/%FF' },
+  'raw route param with a truncated UTF-8 escape reaches the handler': { method: 'GET', path: '/users/%E0%A4' },
   'runtime config endpoint': { method: 'GET', path: '/.blocks-sandbox/config.json' },
 };
 
@@ -1197,10 +1207,11 @@ const EXPECTED: Record<string, unknown> = {
       "access-control-allow-methods": "GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS",
       "access-control-allow-origin": "http://localhost:<port>",
       "access-control-max-age": "7200",
+      "content-type": "application/json",
       "vary": "Origin"
     },
     "cookies": [],
-    "body": ""
+    "body": "{\"error\":\"Not Found\"}"
   },
   "unknown path falls through to the frontend": {
     "status": 404,
@@ -1210,10 +1221,109 @@ const EXPECTED: Record<string, unknown> = {
       "access-control-allow-methods": "GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS",
       "access-control-allow-origin": "http://localhost:<port>",
       "access-control-max-age": "7200",
+      "content-type": "application/json",
       "vary": "Origin"
     },
     "cookies": [],
-    "body": ""
+    "body": "{\"error\":\"Not Found\"}"
+  },
+  "raw route param with malformed percent-encoding": {
+    "status": 400,
+    "headers": {
+      "access-control-allow-credentials": "true",
+      "access-control-allow-headers": "Content-Type, Authorization, x-blocks-user-agent",
+      "access-control-allow-methods": "GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS",
+      "access-control-allow-origin": "http://localhost:<port>",
+      "access-control-max-age": "7200",
+      "content-type": "application/json",
+      "vary": "Origin"
+    },
+    "cookies": [],
+    "body": "{\"error\":\"Bad Request\"}"
+  },
+  "raw route wildcard with malformed percent-encoding": {
+    "status": 400,
+    "headers": {
+      "access-control-allow-credentials": "true",
+      "access-control-allow-headers": "Content-Type, Authorization, x-blocks-user-agent",
+      "access-control-allow-methods": "GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS",
+      "access-control-allow-origin": "http://localhost:<port>",
+      "access-control-max-age": "7200",
+      "content-type": "application/json",
+      "vary": "Origin"
+    },
+    "cookies": [],
+    "body": "{\"error\":\"Bad Request\"}"
+  },
+  "RPC namespace with malformed percent-encoding": {
+    "status": 400,
+    "headers": {
+      "access-control-allow-credentials": "true",
+      "access-control-allow-headers": "Content-Type, Authorization, x-blocks-user-agent",
+      "access-control-allow-methods": "GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS",
+      "access-control-allow-origin": "http://localhost:<port>",
+      "access-control-max-age": "7200",
+      "content-type": "application/json",
+      "vary": "Origin"
+    },
+    "cookies": [],
+    "body": "{\"error\":\"Bad Request\"}"
+  },
+  "raw route param with a trailing bare percent": {
+    "status": 400,
+    "headers": {
+      "access-control-allow-credentials": "true",
+      "access-control-allow-headers": "Content-Type, Authorization, x-blocks-user-agent",
+      "access-control-allow-methods": "GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS",
+      "access-control-allow-origin": "http://localhost:<port>",
+      "access-control-max-age": "7200",
+      "content-type": "application/json",
+      "vary": "Origin"
+    },
+    "cookies": [],
+    "body": "{\"error\":\"Bad Request\"}"
+  },
+  "raw route param with a non-UTF-8 escape reaches the handler": {
+    "status": 201,
+    "headers": {
+      "access-control-allow-credentials": "true",
+      "access-control-allow-headers": "Content-Type, Authorization, x-blocks-user-agent",
+      "access-control-allow-methods": "GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS",
+      "access-control-allow-origin": "http://localhost:<port>",
+      "access-control-max-age": "7200",
+      "cache-control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      "content-type": "application/json",
+      "expires": "0",
+      "pragma": "no-cache",
+      "vary": "Origin",
+      "x-route": "users"
+    },
+    "cookies": [
+      "r1=1; Path=/",
+      "r2=2; Path=/"
+    ],
+    "body": "{\"id\":\"%FF\",\"q\":[],\"cookie\":\"\"}"
+  },
+  "raw route param with a truncated UTF-8 escape reaches the handler": {
+    "status": 201,
+    "headers": {
+      "access-control-allow-credentials": "true",
+      "access-control-allow-headers": "Content-Type, Authorization, x-blocks-user-agent",
+      "access-control-allow-methods": "GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS",
+      "access-control-allow-origin": "http://localhost:<port>",
+      "access-control-max-age": "7200",
+      "cache-control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      "content-type": "application/json",
+      "expires": "0",
+      "pragma": "no-cache",
+      "vary": "Origin",
+      "x-route": "users"
+    },
+    "cookies": [
+      "r1=1; Path=/",
+      "r2=2; Path=/"
+    ],
+    "body": "{\"id\":\"%E0%A4\",\"q\":[],\"cookie\":\"\"}"
   },
   "runtime config endpoint": {
     "status": 200,
