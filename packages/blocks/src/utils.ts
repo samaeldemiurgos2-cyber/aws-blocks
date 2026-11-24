@@ -13,6 +13,11 @@ let installed = false;
  * Call once before importing the API client. Required for any Node.js script
  * that uses authenticated APIs (tests, CLI tools, migration scripts).
  *
+ * A request that sets its own `Cookie` header (to send a tampered or replayed
+ * session cookie, say) is sent with that header unchanged; the jar adds its
+ * cookies only to requests without one. `Set-Cookie` responses are still
+ * stored either way.
+ *
  * @returns A cleanup function that restores the original fetch.
  *
  * @example
@@ -44,16 +49,21 @@ export function installCookieJar(): () => void {
  */
 const jarWrapped = new WeakMap<typeof fetch, typeof fetch>();
 
-/** `send`, keeping cookies in `jar`: sends them, and applies each response's `Set-Cookie`. */
+/**
+ * `send`, keeping cookies in `jar`: sends them, and applies each response's `Set-Cookie`.
+ * A `Cookie` header the caller set (in `init.headers`, or on a `Request` passed as
+ * `input`) is sent as is, so a test can send a tampered or replayed cookie.
+ */
 function withCookieJar(jar: Map<string, string>, send: typeof fetch): typeof fetch {
   const wrapper = (async (input: any, init?: any) => {
     if (jar.size > 0) {
-      const cookieHeader = Array.from(jar.values()).join('; ');
-      init = init ?? {};
+      // `init.headers` replaces a `Request`'s own headers, so start from those when it is absent.
       // `new Headers` accepts a plain object, a `Headers` instance and an entry list alike.
-      const headers = new Headers(init.headers);
-      headers.set('cookie', cookieHeader);
-      init.headers = headers;
+      const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+      if (!headers.has('cookie')) {
+        headers.set('cookie', Array.from(jar.values()).join('; '));
+        init = { ...init, headers };
+      }
     }
 
     const response = await send(input, init);

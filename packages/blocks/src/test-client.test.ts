@@ -117,6 +117,51 @@ describe('createTestClient', () => {
 		}
 	});
 
+	test('installCookieJar sends a Cookie header the caller set instead of its own', async () => {
+		const original = globalThis.fetch;
+		const seen: Headers[] = [];
+		globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+			// What the request goes out with: `init.headers` when given, else the `Request`'s own.
+			seen.push(new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)));
+			return new Response('{}', { headers: { 'set-cookie': 'session=s1; Path=/' } });
+		}) as typeof fetch;
+		const restore = installCookieJar();
+		try {
+			await fetch(url);
+			await fetch(url);
+			assert.strictEqual(
+				seen.at(-1)?.get('cookie'),
+				'session=s1',
+				'with no Cookie header, the jar sends its own',
+			);
+			const tampered = 'session=tampered';
+			const shapes: HeadersInit[] = [
+				new Headers({ Cookie: tampered, 'x-a': '1' }),
+				{ Cookie: tampered, 'x-a': '1' },
+				{ cookie: tampered, 'x-a': '1' },
+				[
+					['COOKIE', tampered],
+					['x-a', '1'],
+				],
+			];
+			for (const headers of shapes) {
+				await fetch(url, { headers });
+				const sent = seen.at(-1);
+				assert.strictEqual(sent?.get('cookie'), tampered, JSON.stringify(headers));
+				assert.strictEqual(sent?.get('x-a'), '1', JSON.stringify(headers));
+			}
+			await fetch(new Request(url, { headers: { Cookie: tampered, 'x-a': '1' } }));
+			assert.strictEqual(seen.at(-1)?.get('cookie'), tampered, 'a Request with its own Cookie header');
+			assert.strictEqual(seen.at(-1)?.get('x-a'), '1', "a Request's other headers");
+			await fetch(new Request(url, { headers: { 'x-a': '1' } }));
+			assert.strictEqual(seen.at(-1)?.get('cookie'), 'session=s1', 'a Request without one gets the jar cookie');
+			assert.strictEqual(seen.at(-1)?.get('x-a'), '1', "a Request's headers are kept next to the jar cookie");
+		} finally {
+			restore();
+			globalThis.fetch = original;
+		}
+	});
+
 	test('a test user sends through the global fetch as it is at call time (a mock installed after import)', async () => {
 		const api = ApiNamespaceClient<SessionApi>('api', { url });
 		const erin = createTestClient({ api });

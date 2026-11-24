@@ -210,7 +210,7 @@ Test helpers come from `aws-cdk-blocks/utils`. The entry is Node only: tests and
 
 | Helper | Use |
 |---|---|
-| `installCookieJar(): () => void` | Keeps `Set-Cookie` across `fetch` calls, so a signed-in session persists between API calls. Call it once before `await import('cdk-blocks')`. It returns a function that restores `fetch`. |
+| `installCookieJar(): () => void` | Keeps `Set-Cookie` across `fetch` calls, so a signed-in session persists between API calls. Call it once before `await import('cdk-blocks')`. It returns a function that restores `fetch`. A request that sets its own `Cookie` header is sent with that header unchanged. |
 | `createTestClient(clients)` | Returns the same typed clients bound to a cookie jar of their own, for several signed-in users in one test. |
 | `getLastAuthCode(username, options?): Promise<string>` | Reads the verification code the local `Auth` pool last sent (local only). |
 | `totpCodeFor(sharedSecret, time?): string` | Computes an authenticator-app (TOTP) code. |
