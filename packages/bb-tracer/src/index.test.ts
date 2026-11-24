@@ -390,6 +390,196 @@ test('trace ID resets after error in top-level segment', async () => {
 	assert.notStrictEqual(traces[0].traceId, traces[1].traceId, 'Trace ID must reset after error in top-level segment');
 });
 
+// ── Concurrent top-level segments ───────────────────────────────────────────
+
+/** A promise plus the function that settles it, so a test can order overlapping segments. */
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+	let resolve = () => {};
+	const promise = new Promise<void>((r) => {
+		resolve = r;
+	});
+	return { promise, resolve };
+}
+
+test('overlapping top-level segments each keep their own trace', async () => {
+	const tracer = new Tracer({ id: 'root' }, 'test');
+	const aStarted = deferred();
+	const bStarted = deferred();
+	const aDone = deferred();
+	const seen: Record<string, (string | null)[]> = { a: [], b: [] };
+
+	// Request A starts, then B starts while A is still running, then A finishes
+	// while B is still running — the interleaving two dev-server requests produce.
+	const a = tracer.startSegment('request-a', async () => {
+		seen.a.push(tracer.getTraceId());
+		aStarted.resolve();
+		await bStarted.promise;
+		await tracer.startSegment('a-child', async () => {});
+		seen.a.push(tracer.getTraceId());
+	});
+	await aStarted.promise;
+	const b = tracer.startSegment('request-b', async () => {
+		seen.b.push(tracer.getTraceId());
+		bStarted.resolve();
+		await aDone.promise;
+		await tracer.startSegment('b-child', async () => {});
+		seen.b.push(tracer.getTraceId());
+	});
+	await a;
+	aDone.resolve();
+	await b;
+
+	assert.strictEqual(seen.a[0], seen.a[1], 'trace ID of A must not change during its run');
+	assert.strictEqual(seen.b[0], seen.b[1], 'trace ID of B must not change during its run');
+	assert.notStrictEqual(seen.a[0], seen.b[0], 'overlapping top-level segments must get different trace IDs');
+
+	const traces = JSON.parse(readFileSync('.cdk-blocks/local/data/root-test/traces.json', 'utf8'));
+	assert.deepStrictEqual(
+		traces.map((t: { segment: string }) => t.segment),
+		['request-a', 'request-b'],
+	);
+	const [recA, recB] = traces;
+	assert.strictEqual(recA.traceId, seen.a[0]);
+	assert.strictEqual(recB.traceId, seen.b[0]);
+	assert.deepStrictEqual(
+		recA.children.map((c: { segment: string }) => c.segment),
+		['a-child'],
+	);
+	assert.deepStrictEqual(
+		recB.children.map((c: { segment: string }) => c.segment),
+		['b-child'],
+	);
+	assert.strictEqual(recA.children[0].traceId, recA.traceId);
+	assert.strictEqual(recB.children[0].traceId, recB.traceId);
+});
+
+test('root annotations stay with the overlapping segment that added them', async () => {
+	const tracer = new Tracer({ id: 'root' }, 'test');
+	const aStarted = deferred();
+	const bStarted = deferred();
+	const a = tracer.startSegment('request-a', async () => {
+		tracer.addAnnotation('request', 'a');
+		aStarted.resolve();
+		await bStarted.promise;
+	});
+	await aStarted.promise;
+	const b = tracer.startSegment('request-b', async () => {
+		tracer.addAnnotation('request', 'b');
+		tracer.addMetadata('only', 'b');
+		bStarted.resolve();
+	});
+	await Promise.all([a, b]);
+	const traces = JSON.parse(readFileSync('.cdk-blocks/local/data/root-test/traces.json', 'utf8'));
+	const recA = traces.find((t: { segment: string }) => t.segment === 'request-a');
+	const recB = traces.find((t: { segment: string }) => t.segment === 'request-b');
+	assert.deepStrictEqual(recA.rootAnnotations, { request: 'a' });
+	assert.deepStrictEqual(recA.rootMetadata, {});
+	assert.deepStrictEqual(recB.rootAnnotations, { request: 'b' });
+	assert.deepStrictEqual(recB.rootMetadata, { only: 'b' });
+});
+
+test('parallel nested segments attach to their own parent', async () => {
+	const tracer = new Tracer({ id: 'root' }, 'test');
+	await tracer.startSegment('root-op', async () => {
+		await Promise.all([
+			tracer.startSegment('left', async () => {
+				await new Promise((r) => setTimeout(r, 5));
+				await tracer.startSegment('left-child', async () => {});
+			}),
+			tracer.startSegment('right', async () => {
+				await tracer.startSegment('right-child', async () => {
+					await new Promise((r) => setTimeout(r, 10));
+				});
+			}),
+		]);
+	});
+	const traces = JSON.parse(readFileSync('.cdk-blocks/local/data/root-test/traces.json', 'utf8'));
+	assert.strictEqual(traces.length, 1);
+	const [rootRec] = traces;
+	assert.deepStrictEqual(
+		rootRec.children.map((c: { segment: string }) => c.segment),
+		['left', 'right'],
+	);
+	assert.deepStrictEqual(
+		rootRec.children[0].children.map((c: { segment: string }) => c.segment),
+		['left-child'],
+	);
+	assert.deepStrictEqual(
+		rootRec.children[1].children.map((c: { segment: string }) => c.segment),
+		['right-child'],
+	);
+});
+
+// ── Non-Error thrown values ─────────────────────────────────────────────────
+
+const NON_ERROR_THROWS: { label: string; value: unknown }[] = [
+	{ label: 'undefined', value: undefined },
+	{ label: 'null', value: null },
+	{ label: 'a string', value: 'plain string' },
+	{ label: 'a number', value: 42 },
+	{ label: 'a plain object', value: { code: 'E_CUSTOM' } },
+	{ label: 'a null-prototype object', value: Object.create(null) },
+];
+
+for (const { label, value } of NON_ERROR_THROWS) {
+	test(`startSegment rethrows ${label} unchanged`, async () => {
+		const tracer = new Tracer({ id: 'root' }, 'test');
+		let caught: unknown = Symbol('not thrown');
+		try {
+			await tracer.startSegment('throws-non-error', async () => {
+				throw value;
+			});
+		} catch (e) {
+			caught = e;
+		}
+		assert.strictEqual(caught, value);
+		// The segment is still closed and persisted.
+		const traces = JSON.parse(readFileSync('.cdk-blocks/local/data/root-test/traces.json', 'utf8'));
+		assert.strictEqual(traces.length, 1);
+		assert.strictEqual(traces[0].segment, 'throws-non-error');
+	});
+}
+
+test('a thrown string is recorded as the segment error message', async () => {
+	const tracer = new Tracer({ id: 'root' }, 'test');
+	await assert.rejects(() =>
+		tracer.startSegment('throws-string', async () => {
+			throw 'went wrong';
+		}),
+	);
+	const traces = JSON.parse(readFileSync('.cdk-blocks/local/data/root-test/traces.json', 'utf8'));
+	assert.deepStrictEqual(traces[0].error, { name: '', message: 'went wrong' });
+});
+
+test('a thrown undefined records no segment error, like X-Ray', async () => {
+	const tracer = new Tracer({ id: 'root' }, 'test');
+	await assert.rejects(() =>
+		tracer.startSegment('throws-undefined', async () => {
+			throw undefined;
+		}),
+	);
+	const traces = JSON.parse(readFileSync('.cdk-blocks/local/data/root-test/traces.json', 'utf8'));
+	assert.strictEqual(traces[0].error, undefined);
+});
+
+test('a nested segment that throws undefined lets the parent continue', async () => {
+	const tracer = new Tracer({ id: 'root' }, 'test');
+	let caught: unknown = Symbol('not thrown');
+	await tracer.startSegment('outer', async () => {
+		try {
+			await tracer.startSegment('inner', async () => {
+				throw undefined;
+			});
+		} catch (e) {
+			caught = e;
+		}
+	});
+	assert.strictEqual(caught, undefined);
+	const traces = JSON.parse(readFileSync('.cdk-blocks/local/data/root-test/traces.json', 'utf8'));
+	assert.strictEqual(traces.length, 1);
+	assert.strictEqual(traces[0].children[0].segment, 'inner');
+});
+
 // ── Telemetry Registration ──────────────────────────────────────────────────
 
 /**

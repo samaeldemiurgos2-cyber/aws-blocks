@@ -4,6 +4,7 @@
 import { Scope } from '@aws-cdk-blocks/core';
 import { getMockDataDir, assertNotMockInDeployedEnv } from '@aws-cdk-blocks/core/bb-utils';
 import type { ScopeParent } from '@aws-cdk-blocks/core';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -34,6 +35,45 @@ interface TraceRecord {
 	rootMetadata?: Record<string, unknown>;
 }
 
+/** State shared by every segment of one trace (one top-level `startSegment` call). */
+interface TraceState {
+	traceId: string;
+	/** Sampling decision rolled once at the root and inherited by every subsegment. */
+	sampled: boolean;
+	rootAnnotations: Record<string, AnnotationValue>;
+	rootMetadata: Record<string, unknown>;
+}
+
+/** The async context a segment's `fn` runs in. */
+interface SegmentContext {
+	trace: TraceState;
+	/** Record of the enclosing segment; `null` in an unsampled trace, which records nothing. */
+	parent: TraceRecord | null;
+}
+
+/**
+ * Convert a thrown or reported value into the `{ name, message }` the mock
+ * records, following what X-Ray's `Subsegment.addError` accepts: a string is
+ * recorded as the message, an object contributes its string `name` and
+ * `message`, and anything else (`undefined`, `null`, numbers, booleans, ...)
+ * records no error. Never throws, so recording cannot replace the value the
+ * caller threw.
+ */
+function toRecordedError(error: unknown): { name: string; message: string } | undefined {
+	if (typeof error === 'string' || error instanceof String) {
+		return { name: '', message: String(error) };
+	}
+	if (error === null || typeof error !== 'object') return undefined;
+	try {
+		const name = 'name' in error && typeof error.name === 'string' ? error.name : '';
+		const message = 'message' in error && typeof error.message === 'string' ? error.message : '';
+		return { name, message };
+	} catch {
+		// A throwing getter or Proxy trap: record that an error happened without its details.
+		return { name: '', message: '' };
+	}
+}
+
 // ── Mock Segment ────────────────────────────────────────────────────────────
 
 class MockSegment implements ISegment {
@@ -50,8 +90,11 @@ class MockSegment implements ISegment {
 		this.metadata[key] = value;
 	}
 
-	addError(error: Error): void {
-		this.error = { name: error.name, message: error.message };
+	// Accepts `unknown` (wider than `ISegment`'s `Error`) because `startSegment`
+	// passes whatever `fn` threw, and JavaScript callers can pass anything.
+	addError(error: unknown): void {
+		const recorded = toRecordedError(error);
+		if (recorded) this.error = recorded;
 	}
 
 	setHttpStatus(statusCode: number): void {
@@ -87,17 +130,23 @@ export class Tracer extends Scope {
 	private enabled: boolean;
 	private samplingRate: number;
 	private tracesFilePath: string;
+	/**
+	 * Trace ID, annotations and metadata set *outside* any segment (e.g.
+	 * `getTraceId()` or `addAnnotation()` before the request's root segment
+	 * starts). The next top-level `startSegment` adopts them as its trace state.
+	 */
 	private currentTraceId: string | null = null;
 	private rootAnnotations: Record<string, AnnotationValue> = {};
 	private rootMetadata: Record<string, unknown> = {};
-	private segmentStack: TraceRecord[] = [];
 	/**
-	 * Depth tracker for an in-flight *unsampled* trace. The sampled path tracks
-	 * nesting via `segmentStack`, but an unsampled root pushes nothing, so a
-	 * counter is needed to keep its subsegments unsampled too (rather than
-	 * letting them re-roll and spawn their own root traces).
+	 * The trace and parent segment of the running `startSegment` call. Kept in
+	 * async context rather than instance fields so overlapping top-level
+	 * segments (concurrent dev-server requests) each get their own trace, and
+	 * nested segments attach to the parent in their own async chain. An
+	 * unsampled trace has a context too, so its subsegments stay unsampled
+	 * rather than re-rolling and spawning their own root traces.
 	 */
-	private unsampledDepth = 0;
+	private context = new AsyncLocalStorage<SegmentContext>();
 
 	/** @internal Logger for internal operations. Defaults to error-level when not provided. */
 	protected log: ChildLogger;
@@ -133,28 +182,19 @@ export class Tracer extends Scope {
 		// at all. Rolling per subsegment (the previous behavior) would randomly
 		// drop children from a sampled trace, or promote a subsegment of an
 		// unsampled trace into its own orphan root trace.
-		const inActiveTrace = this.segmentStack.length > 0 || this.unsampledDepth > 0;
-		const sampled = inActiveTrace ? this.unsampledDepth === 0 : this.shouldSample();
-		if (!sampled) {
-			this.unsampledDepth++;
-			try {
-				return await fn(NO_OP_SEGMENT);
-			} finally {
-				this.unsampledDepth--;
-			}
-		}
-
-		if (!this.currentTraceId) {
-			this.currentTraceId = randomUUID();
+		const parentContext = this.context.getStore();
+		const isTopLevel = parentContext === undefined;
+		const trace = parentContext?.trace ?? this.beginTrace(this.shouldSample());
+		if (!trace.sampled) {
+			return this.context.run({ trace, parent: null }, () => fn(NO_OP_SEGMENT));
 		}
 
 		const segment = new MockSegment();
 		const startTime = Date.now();
-		const isTopLevel = this.segmentStack.length === 0;
 
-		// Create a placeholder record and push onto stack
+		// Create a placeholder record; it becomes the parent of segments started inside fn
 		const record: TraceRecord = {
-			traceId: this.currentTraceId!,
+			traceId: trace.traceId,
 			segment: name,
 			startTime,
 			endTime: 0,
@@ -164,46 +204,38 @@ export class Tracer extends Scope {
 			children: [],
 		};
 
-		// If there's a parent on the stack, add this as a child
-		if (!isTopLevel) {
-			this.segmentStack[this.segmentStack.length - 1].children.push(record);
+		// If there's a parent segment in this async chain, add this as a child
+		if (parentContext?.parent) {
+			parentContext.parent.children.push(record);
 		}
 
-		this.segmentStack.push(record);
-
 		try {
-			const result = await fn(segment);
+			const result = await this.context.run({ trace, parent: record }, () => fn(segment));
 			const endTime = Date.now();
 
 			this.finalizeRecord(record, endTime, segment);
-			this.segmentStack.pop();
 
 			if (isTopLevel) {
-				record.rootAnnotations = { ...this.rootAnnotations };
-				record.rootMetadata = { ...this.rootMetadata };
+				record.rootAnnotations = { ...trace.rootAnnotations };
+				record.rootMetadata = { ...trace.rootMetadata };
 				this.persistTrace(record);
 				this.logTrace(record);
-				this.currentTraceId = null;
-				this.rootAnnotations = {};
-				this.rootMetadata = {};
 			}
 
 			return result;
 		} catch (error) {
 			const endTime = Date.now();
-			segment.addError(error as Error);
+			// `error` can be any value (`throw undefined` is legal); addError
+			// records what it can and the original value is rethrown unchanged.
+			segment.addError(error);
 
 			this.finalizeRecord(record, endTime, segment);
-			this.segmentStack.pop();
 
 			if (isTopLevel) {
-				record.rootAnnotations = { ...this.rootAnnotations };
-				record.rootMetadata = { ...this.rootMetadata };
+				record.rootAnnotations = { ...trace.rootAnnotations };
+				record.rootMetadata = { ...trace.rootMetadata };
 				this.persistTrace(record);
 				this.logTrace(record);
-				this.currentTraceId = null;
-				this.rootAnnotations = {};
-				this.rootMetadata = {};
 			}
 
 			throw error;
@@ -220,7 +252,9 @@ export class Tracer extends Scope {
 	 */
 	addAnnotation(key: string, value: AnnotationValue): void {
 		if (!this.enabled) return;
-		this.rootAnnotations[key] = value;
+		// Inside a segment: the running trace. Outside: held for the next trace.
+		const target = this.context.getStore()?.trace.rootAnnotations ?? this.rootAnnotations;
+		target[key] = value;
 	}
 
 	/**
@@ -231,7 +265,9 @@ export class Tracer extends Scope {
 	 */
 	addMetadata(key: string, value: unknown): void {
 		if (!this.enabled) return;
-		this.rootMetadata[key] = value;
+		// Inside a segment: the running trace. Outside: held for the next trace.
+		const target = this.context.getStore()?.trace.rootMetadata ?? this.rootMetadata;
+		target[key] = value;
 	}
 
 	/**
@@ -243,6 +279,8 @@ export class Tracer extends Scope {
 	 */
 	getTraceId(): string | null {
 		if (!this.enabled) return null;
+		const active = this.context.getStore();
+		if (active) return active.trace.traceId;
 		if (!this.currentTraceId) {
 			this.currentTraceId = randomUUID();
 		}
@@ -253,6 +291,24 @@ export class Tracer extends Scope {
 
 	private shouldSample(): boolean {
 		return Math.random() < this.samplingRate;
+	}
+
+	/**
+	 * Start the state for a new top-level trace. It takes over the trace ID,
+	 * annotations and metadata set outside any segment, and resets them so the
+	 * following trace starts clean.
+	 */
+	private beginTrace(sampled: boolean): TraceState {
+		const trace: TraceState = {
+			traceId: this.currentTraceId ?? randomUUID(),
+			sampled,
+			rootAnnotations: this.rootAnnotations,
+			rootMetadata: this.rootMetadata,
+		};
+		this.currentTraceId = null;
+		this.rootAnnotations = {};
+		this.rootMetadata = {};
+		return trace;
 	}
 
 	private finalizeRecord(record: TraceRecord, endTime: number, segment: MockSegment): void {

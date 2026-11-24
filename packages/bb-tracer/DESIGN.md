@@ -55,8 +55,10 @@ When `enabled: false` is passed, `registerTracer` is not called — that Tracer 
 
 ## Mock Implementation
 
-- `startSegment` captures timing (start/end timestamps via `Date.now()`) and manages a segment hierarchy via a stack (`segmentStack: TraceRecord[]`).
-- Nested `startSegment` calls push child records onto the stack; child records are added to the parent's `children` array.
+- `startSegment` captures timing (start/end timestamps via `Date.now()`) and tracks the running trace and parent segment in an `AsyncLocalStorage` context, one per `Tracer` instance.
+- Each top-level `startSegment` call starts its own trace, so overlapping calls (concurrent dev-server requests) keep separate trace IDs, annotations, metadata and segment trees. A nested `startSegment` call joins the trace of its own async chain, and its record is added to that chain's parent `children` array, including segments run in parallel with `Promise.all`.
+- `getTraceId()`, `addAnnotation()` and `addMetadata()` called inside a segment apply to that segment's trace. Called outside any segment, they apply to the next top-level segment.
+- When `fn` throws, `startSegment` rethrows the original value unchanged, whatever it is (`undefined`, `null`, a string, a non-`Error` object). The recorded `error` follows X-Ray's `addError`: an `Error` or other object records its string `name` and `message`, a string records `{ name: '', message }`, and any other value records no error.
 - Annotations and metadata are stored on each `MockSegment` instance and copied to the `TraceRecord` on segment close.
 - On top-level segment close, the complete segment tree is persisted to `.cdk-blocks/local/data/{fullId}/traces.json`.
 - Traces are also logged to console as structured JSON (`_type: 'trace'`).
