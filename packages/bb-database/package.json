@@ -2,7 +2,7 @@
   "name": "@aws-cdk-blocks/bb-database",
   "version": "1.0.0",
   "keywords": [
-    "aws-blocks",
+    "cdk-blocks",
     "database",
     "postgresql",
     "sql",

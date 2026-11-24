@@ -2,7 +2,7 @@
   "name": "@aws-cdk-blocks/bb-tracer",
   "version": "1.0.0",
   "keywords": [
-    "aws-blocks",
+    "cdk-blocks",
     "tracing",
     "distributed-tracing",
     "xray",

@@ -106,7 +106,7 @@ its own skip list keyed by package name — add the package to that skip list to
 The extending guide's **Pattern 3 (Custom BB)** is the *external* mirror of this: a user
 in their own repo authors the same 3-file shape under their `packages/bb-*`, names it
 `@their-org/bb-*`, pins the same `aws-cdk-lib`/`constructs` peers, tags `keywords:
-["aws-blocks"]`, and skips **all** monorepo wiring (§4 touchpoints 1–5 don't exist for
+["cdk-blocks"]`, and skips **all** monorepo wiring (§4 touchpoints 1–5 don't exist for
 them). Same skeleton, different (or absent) wiring. The guide literally recommends
 "copy `bb-kv-store`, rename, gut it" — i.e. begging for a generator.
 
@@ -132,7 +132,7 @@ edits (not string templating).
     and `npm install` so your app can import it without publishing. App code untouched;
     scope derived from your root package name (or `--scope`). This is the "scaffold **and
     link** a subpackage" case.
-  - **external** — anywhere else → standalone `@<scope>/bb-*`, `keywords: ["aws-blocks"]`,
+  - **external** — anywhere else → standalone `@<scope>/bb-*`, `keywords: ["cdk-blocks"]`,
     no workspace wiring.
 - **Prompts / flags:** block class name (PascalCase, no "BB" prefix) → package name
   `bb-{kebab}`; `--dir`, `--scope`, `--yes`, `--skip-install`, `--skip-verify`,

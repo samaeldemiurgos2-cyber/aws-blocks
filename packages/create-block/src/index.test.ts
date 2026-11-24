@@ -275,7 +275,7 @@ describe('run() integration — customer mode', () => {
 			const pkgDir = join(dir, 'packages', 'bb-search-cache');
 			const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf-8'));
 			assert.strictEqual(pkg.name, '@acme/bb-search-cache');
-			assert.ok(pkg.keywords.includes('aws-blocks'));
+			assert.ok(pkg.keywords.includes('cdk-blocks'));
 
 			const rootWs = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf-8')).workspaces;
 			assert.ok(rootWs.includes('packages/bb-search-cache'));

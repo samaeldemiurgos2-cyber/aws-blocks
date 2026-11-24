@@ -6,8 +6,6 @@ Background job processing backed by SQS, run on Lambda or a container.
 
 **When NOT to use:** Work that runs on a schedule: use `CronJob`.
 
-**Keywords:** queue, job, background, async, worker, submit, batch, retry, status, transitions, SQS
-
 > Design & mock parity details: [DESIGN.md](./DESIGN.md)
 
 ## Quick start

@@ -2,11 +2,18 @@
   "name": "@aws-cdk-blocks/bb-cron-job",
   "version": "1.0.0",
   "keywords": [
-    "aws-blocks",
+    "cdk-blocks",
     "cron",
     "scheduler",
     "eventbridge",
-    "lambda"
+    "lambda",
+    "schedule",
+    "timer",
+    "periodic",
+    "recurring",
+    "rate",
+    "background",
+    "interval"
   ],
   "repository": {
     "type": "git",

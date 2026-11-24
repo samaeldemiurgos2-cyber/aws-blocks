@@ -2,7 +2,7 @@
   "name": "@aws-cdk-blocks/bb-email-client",
   "version": "1.0.0",
   "keywords": [
-    "aws-blocks",
+    "cdk-blocks",
     "email",
     "ses",
     "transactional-email"

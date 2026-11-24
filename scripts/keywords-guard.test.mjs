@@ -30,7 +30,7 @@ function runner(guardPath, command) {
 		: [TSX_BIN, [guardPath, command]];
 }
 
-const DISCOVERY_KEYWORD = "aws-blocks";
+const DISCOVERY_KEYWORD = "cdk-blocks";
 const UMBRELLA = "aws-cdk-blocks";
 const SIBLING = "@aws-cdk-blocks/core";
 
@@ -53,7 +53,10 @@ function baseRepo(t, files = {}) {
 	t.after(() => rmSync(dir, { recursive: true, force: true }));
 
 	mkdirSync(join(dir, "scripts"), { recursive: true });
-	copyFileSync(GUARD_SRC, join(dir, "scripts", "keywords-guard.ts"));
+	// The guard and the module it imports the discovery tag from.
+	for (const file of ["keywords-guard.ts", "discovery-keyword.mjs"]) {
+		copyFileSync(join(SCRIPTS_DIR, file), join(dir, "scripts", file));
+	}
 
 	const layout = {
 		"package.json": `${JSON.stringify({ name: "fixture-root", private: true }, null, 2)}\n`,
@@ -98,7 +101,7 @@ describe("verify-discovery-tag: every published package carries the discovery ke
 
 		const { status, output } = guard(dir, "verify-discovery-tag");
 		assert.equal(status, 0, output);
-		assert.match(output, /All 2 published package\(s\) carry the "aws-blocks" keyword/);
+		assert.match(output, /All 2 published package\(s\) carry the "cdk-blocks" keyword/);
 	});
 
 	it("fails and names the package when one is missing it", (t) => {
@@ -110,7 +113,7 @@ describe("verify-discovery-tag: every published package carries the discovery ke
 
 		const { status, output } = guard(dir, "verify-discovery-tag");
 		assert.equal(status, 1, output);
-		assert.match(output, /missing the "aws-blocks" keyword/);
+		assert.match(output, /missing the "cdk-blocks" keyword/);
 		assert.match(output, /@aws-cdk-blocks\/bb-queue {2}\(packages\/bb-queue\/package\.json\)/);
 		// The compliant packages must not be reported.
 		assert.doesNotMatch(output, /@aws-cdk-blocks\/core/);
@@ -172,10 +175,10 @@ describe("verify-discovery-tag: every published package carries the discovery ke
 		assert.equal(status, 0, output);
 	});
 
-	it("substring matches do not satisfy the tag", (t) => {
+	it("substring matches and the former aws-blocks tag do not satisfy the tag", (t) => {
 		const dir = baseRepo(t, {
 			"packages/bb-queue/package.json": pkgJson("@aws-cdk-blocks/bb-queue", {
-				keywords: ["aws-blocks-queue", "aws"],
+				keywords: ["cdk-blocks-queue", "aws-blocks", "aws"],
 			}),
 		});
 

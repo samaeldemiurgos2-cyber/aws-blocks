@@ -4,7 +4,8 @@
 
 /**
  * Keeps the committed Building Block *catalog table* in packages/blocks/README.md
- * in sync with the per-block READMEs. This script ONLY manages the table between
+ * in sync with the per-block packages: the blurb comes from each README, the
+ * keywords from each package.json. This script ONLY manages the table between
  * the `<!-- BEGIN:block-catalog -->` / `<!-- END:block-catalog -->` markers — it
  * leaves the rest of the README (the static decision-tree prose, etc.) untouched
  * and does NOT generate the shipped `docs/` artifact. That artifact (per-block
@@ -19,11 +20,15 @@
  *
  *   --check  (CI / PR gate; `npm run sync-docs:check`)
  *     Render the catalog table in memory and compare it to what is committed
- *     between the markers. Exit 1 with an actionable message if they differ or the
- *     markers are missing; exit 0 if in sync. Writes nothing.
+ *     between the markers. Exit 1 with an actionable message if they differ, the
+ *     markers are missing, or a block declares no keyword besides the discovery
+ *     tag (its Keywords cell would be blank); exit 0 otherwise. Writes nothing.
  *
  * Inclusion rule: every package under packages/ that has a README.md and is not in
  * EXCLUDED.
+ *
+ * Keywords: package.json `keywords` is the only source, the same array npm search
+ * indexes and scripts/keywords-guard.ts checks. A README carries no keyword list.
  *
  * The block set (inclusion rule + EXCLUDED) is shared with gen-block-docs.mjs via
  * block-packages.mjs so the two generators can't drift.
@@ -33,6 +38,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getBlockPackages, packagesDir } from './block-packages.mjs';
+import { DISCOVERY_KEYWORD } from './discovery-keyword.mjs';
 
 const readmePath = join(packagesDir, 'blocks', 'README.md');
 
@@ -54,13 +60,21 @@ function main() {
   const table = renderCatalogTable(catalog);
 
   if (mode === 'check') {
-    runCheck(table);
+    runCheck(catalog, table);
   } else {
     runWrite(catalog, table);
   }
 }
 
-function runCheck(table) {
+function runCheck(catalog, table) {
+  const blank = catalog.filter((entry) => !entry.keywords).map((entry) => entry.pkg);
+  if (blank.length > 0) {
+    process.stderr.write(
+      `❌ No keywords for the Building Block catalog: ${blank.join(', ')}. Add keywords that describe what the block does to "keywords" in its package.json, next to "${DISCOVERY_KEYWORD}". ${SYNC_HINT}\n`,
+    );
+    process.exit(1);
+  }
+
   const readme = readFileSync(readmePath, 'utf-8');
   const current = extractBetweenMarkers(readme);
 
@@ -94,7 +108,8 @@ function runWrite(catalog, table) {
 function buildCatalog(pkgs) {
   const entries = pkgs.map((pkg) => {
     const readme = readFileSync(join(packagesDir, pkg, 'README.md'), 'utf-8');
-    return { pkg, blurb: extractBlurb(readme), keywords: extractKeywords(readme) };
+    const manifest = JSON.parse(readFileSync(join(packagesDir, pkg, 'package.json'), 'utf-8'));
+    return { pkg, blurb: extractBlurb(readme), keywords: formatKeywords(manifest.keywords) };
   });
   entries.sort((a, b) => (a.pkg < b.pkg ? -1 : a.pkg > b.pkg ? 1 : 0));
   return entries;
@@ -151,7 +166,18 @@ export function extractBlurb(content) {
   return '';
 }
 
-function extractKeywords(content) {
-  const match = content.match(/\*\*Keywords?:\*\*\s*(.+)/i);
-  return match ? match[1].trim() : '';
+// ─── package.json parsing ────────────────────────────────────────────────────
+
+/**
+ * The Keywords cell for a package.json `keywords` value: every keyword but the
+ * discovery tag. Blank entries are dropped, so a list of only the tag and blanks
+ * gives an empty cell.
+ */
+export function formatKeywords(keywords) {
+  if (!Array.isArray(keywords)) return '';
+  return keywords
+    .filter((keyword) => typeof keyword === 'string')
+    .map((keyword) => keyword.trim())
+    .filter((keyword) => keyword && keyword !== DISCOVERY_KEYWORD)
+    .join(', ');
 }

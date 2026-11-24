@@ -5,9 +5,9 @@
  * Keyword guard used in CI.
  *
  *   verify-discovery-tag  Exit non-zero if any publishable `@aws-cdk-blocks/*`
- *                   package omits the `aws-blocks` keyword from its
+ *                   package omits the `cdk-blocks` keyword from its
  *                   package.json. That keyword is the documented discovery
- *                   path — `npm search keywords:aws-blocks`
+ *                   path — `npm search keywords:cdk-blocks`
  *                   (docs/guides/extending-with-existing-aws-resources.md) —
  *                   and it is invisible at review time: a new Building Block
  *                   builds, tests and publishes perfectly well without it,
@@ -33,6 +33,7 @@
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DISCOVERY_KEYWORD } from "./discovery-keyword.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PACKAGES_DIR = join(ROOT, "packages");
@@ -40,7 +41,6 @@ const SCOPE = "@aws-cdk-blocks/";
 // The umbrella publishes unscoped, so a scope test alone would exempt it from the guard.
 const UMBRELLA_PKG = "aws-cdk-blocks";
 const isReleasedPackage = (name: string): boolean => name.startsWith(SCOPE) || name === UMBRELLA_PKG;
-const DISCOVERY_KEYWORD = "aws-blocks";
 
 /**
  * The guard could not evaluate what it was asked to assert. Reported as a normal

@@ -2,7 +2,7 @@
   "name": "@aws-cdk-blocks/hosting",
   "version": "1.0.0",
   "keywords": [
-    "aws-blocks",
+    "cdk-blocks",
     "hosting",
     "cloudfront",
     "s3",

@@ -1,9 +1,8 @@
 # __BB_CLASS__
 
 TODO: one-sentence summary of what this Building Block does. (The first sentence
-becomes the block's blurb in the `aws-cdk-blocks` catalog table.)
-
-**Keywords:** TODO, comma, separated
+becomes the block's blurb in the `aws-cdk-blocks` catalog table. The Keywords
+column of that table comes from `keywords` in `package.json`.)
 
 TODO: delete this paragraph. A **primitive** block provisions and owns its own
 AWS infrastructure. The generated code is a storage-agnostic `Scope` skeleton

@@ -314,15 +314,15 @@ writeFileSync(
  * `scripts/generate-version.mjs` and its deps pin monorepo-internal versions —
  * neither works from the registry. Point `prebuild` at a standalone
  * `scripts/generate-version.mjs`, re-pin `@aws-cdk-blocks/*` deps to published
- * versions, add the `aws-blocks` discovery keyword, drop the core-coupled CDK
- * synth test, and swap the tsconfig for a standalone one.
+ * versions, drop the core-coupled CDK synth test, and swap the tsconfig for a
+ * standalone one. The `cdk-blocks` discovery keyword needs no fixup: the template's
+ * `package.json` already declares it.
  */
 async function fixupForExternal(targetDir: string, className: string, dryRun: boolean): Promise<void> {
 	if (dryRun) return; // nothing on disk to fix up in a preview
 	const pkgPath = join(targetDir, 'package.json');
 	const pkg = JSON.parse(await readFile(pkgPath, 'utf-8')) as {
 		scripts?: Record<string, string>;
-		keywords?: string[];
 		dependencies?: Record<string, string>;
 		peerDependencies?: Record<string, string>;
 	};
@@ -331,7 +331,6 @@ async function fixupForExternal(targetDir: string, className: string, dryRun: bo
 	// monorepo's scripts/ — a real file avoids cross-shell quoting issues (npm
 	// runs scripts through cmd.exe on Windows).
 	pkg.scripts.prebuild = `node scripts/generate-version.mjs ${className}`;
-	pkg.keywords = Array.from(new Set([...(pkg.keywords ?? []), 'aws-blocks']));
 	// Re-pin @aws-cdk-blocks/* deps to versions that exist on the registry.
 	for (const deps of [pkg.dependencies, pkg.peerDependencies]) {
 		if (!deps) continue;
@@ -729,7 +728,7 @@ Modes (auto-detected):
                 npm-installs so your app can import it (no publish). App code
                 is not modified.
   external      run anywhere else → generates a standalone @<scope>/bb-<name>
-                package (keywords: ["aws-blocks"]), no workspace wiring.
+                package (keywords: ["cdk-blocks"]), no workspace wiring.
 
 What it generates:
   A Building Block — a Scope subclass with one strongly-typed API, backed by four
@@ -944,14 +943,16 @@ function printNextSteps(mode: Mode, names: DerivedNames, targetRel: string): voi
 		console.log(`  2. Add a real ${names.className} instance + assertions to test-apps/comprehensive`);
 		console.log(`     (cdk-blocks/index.ts and test/${names.suffix}.test.ts — zero type casts).`);
 		console.log(`  3. Fill in the TODO summaries in packages/blocks/src/index.ts and the changeset.`);
-		console.log('  4. npm run build && npm run lint:deps && npm test && npm run test:e2e:local');
+		console.log(`  4. Add keywords for what ${names.className} does to "keywords" in packages/${names.folder}/package.json,`);
+		console.log('     then run npm run sync-docs: they fill the Keywords column of the block catalog.');
+		console.log('  5. npm run build && npm run lint:deps && npm test && npm run test:e2e:local');
 	} else if (mode === 'customer') {
 		console.log(`  1. Implement ${names.className}'s API in packages/${names.folder}/src/.`);
 		console.log(`  2. Import it in your backend: import { ${names.className} } from '${names.pkgName}';`);
 		console.log(`     (it's linked into your workspace — no publish needed).`);
 	} else {
 		console.log(`  1. cd ${shellQuotePath(targetRel)} && npm run build && npm test`);
-		console.log(`  2. Implement ${names.className}'s API in src/, then publish (keywords: ["aws-blocks"]).`);
+		console.log(`  2. Implement ${names.className}'s API in src/, then publish (keywords: ["cdk-blocks"]).`);
 	}
 }
 

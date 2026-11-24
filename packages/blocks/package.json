@@ -2,7 +2,7 @@
   "name": "aws-cdk-blocks",
   "version": "1.0.1",
   "keywords": [
-    "aws-blocks",
+    "cdk-blocks",
     "framework",
     "fullstack",
     "backend",

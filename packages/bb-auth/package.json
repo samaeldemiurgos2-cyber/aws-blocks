@@ -2,7 +2,7 @@
   "name": "@aws-cdk-blocks/bb-auth",
   "version": "1.0.0",
   "keywords": [
-    "aws-blocks",
+    "cdk-blocks",
     "authentication",
     "auth",
     "cognito",

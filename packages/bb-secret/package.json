@@ -2,7 +2,7 @@
   "name": "@aws-cdk-blocks/bb-secret",
   "version": "1.0.0",
   "keywords": [
-    "aws-blocks",
+    "cdk-blocks",
     "secret",
     "secrets-manager",
     "credentials"

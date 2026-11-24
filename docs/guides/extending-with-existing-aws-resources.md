@@ -502,22 +502,22 @@ Building Block ships. Once your BB is generally useful, you can publish it.
 {
   "name": "@your-org/bb-queue",
   "version": "0.1.0",
-  "keywords": ["aws-blocks", "queue"],
+  "keywords": ["cdk-blocks", "queue"],
   "exports": { /* ... cdk / aws-runtime / default conditions ... */ }
 }
 ```
 
-Tagging with **`aws-blocks`** in `keywords` lets others find CDK Blocks-compatible
+Tagging with **`cdk-blocks`** in `keywords` lets others find CDK Blocks-compatible
 BBs by searching npm:
 
 ```bash
-npm search keywords:aws-blocks
+npm search keywords:cdk-blocks
 ```
 
-`aws-blocks` is the confirmed discovery tag — every first-party CDK Blocks package
+`cdk-blocks` is the confirmed discovery tag — every first-party CDK Blocks package
 carries it, so tagging your BB with it makes it discoverable alongside them.
 You can optionally add functional keywords describing what your BB does (e.g.
-`queue`), but `aws-blocks` is the one that matters for discovery. Keep keywords
+`queue`), but `cdk-blocks` is the one that matters for discovery. Keep keywords
 accurate to what your BB actually implements rather than aspirational.
 
 **A few things to get right before publishing:**

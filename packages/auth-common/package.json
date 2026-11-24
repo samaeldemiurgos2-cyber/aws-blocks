@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "sideEffects": false,
   "keywords": [
-    "aws-blocks",
+    "cdk-blocks",
     "authentication",
     "auth-ui"
   ],

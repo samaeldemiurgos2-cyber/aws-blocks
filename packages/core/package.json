@@ -2,7 +2,7 @@
   "name": "@aws-cdk-blocks/core",
   "version": "1.0.1",
   "keywords": [
-    "aws-blocks",
+    "cdk-blocks",
     "framework",
     "typescript",
     "backend",

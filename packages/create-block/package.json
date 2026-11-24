@@ -2,7 +2,7 @@
   "name": "@aws-cdk-blocks/create-block",
   "version": "1.0.0",
   "keywords": [
-    "aws-blocks"
+    "cdk-blocks"
   ],
   "description": "Scaffold a new AWS CDK Blocks Building Block (bb-*) — inside the monorepo (contributor mode) or in your own project (external mode).",
   "repository": {

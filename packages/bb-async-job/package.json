@@ -2,11 +2,20 @@
   "name": "@aws-cdk-blocks/bb-async-job",
   "version": "1.0.0",
   "keywords": [
-    "aws-blocks",
+    "cdk-blocks",
     "background-jobs",
     "queue",
     "sqs",
-    "lambda"
+    "lambda",
+    "job",
+    "background",
+    "async",
+    "worker",
+    "submit",
+    "batch",
+    "retry",
+    "status",
+    "transitions"
   ],
   "repository": {
     "type": "git",

@@ -2,7 +2,7 @@
   "name": "@aws-cdk-blocks/bb-dashboard",
   "version": "1.0.0",
   "keywords": [
-    "aws-blocks",
+    "cdk-blocks",
     "cloudwatch",
     "dashboard",
     "observability"

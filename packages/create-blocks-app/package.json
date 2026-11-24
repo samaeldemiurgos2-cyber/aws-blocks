@@ -2,7 +2,7 @@
   "name": "@aws-cdk-blocks/create-blocks-app",
   "version": "1.0.1",
   "keywords": [
-    "aws-blocks",
+    "cdk-blocks",
     "cli",
     "scaffolding",
     "starter",

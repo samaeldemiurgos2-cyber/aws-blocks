@@ -2,7 +2,7 @@
   "name": "@aws-cdk-blocks/bb-knowledge-base",
   "version": "1.0.0",
   "keywords": [
-    "aws-blocks",
+    "cdk-blocks",
     "knowledge-base",
     "bedrock",
     "semantic-search"

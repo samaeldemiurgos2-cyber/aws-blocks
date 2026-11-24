@@ -2,7 +2,7 @@
   "name": "@aws-cdk-blocks/bb-app-setting",
   "version": "1.0.0",
   "keywords": [
-    "aws-blocks",
+    "cdk-blocks",
     "configuration",
     "ssm",
     "parameter-store",

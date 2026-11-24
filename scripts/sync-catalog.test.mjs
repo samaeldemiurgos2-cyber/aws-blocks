@@ -4,8 +4,13 @@
 // Run: node --test scripts/sync-catalog.test.mjs
 
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
-import { escapeCell, extractBetweenMarkers, extractBlurb, injectCatalog } from './sync-catalog.mjs';
+import { fileURLToPath } from 'node:url';
+import { escapeCell, extractBetweenMarkers, extractBlurb, formatKeywords, injectCatalog } from './sync-catalog.mjs';
 
 const BEGIN_MARKER = '<!-- BEGIN:block-catalog -->';
 const END_MARKER = '<!-- END:block-catalog -->';
@@ -93,5 +98,85 @@ describe('escapeCell', () => {
 
   it('returns an empty string for a missing value', () => {
     assert.equal(escapeCell(undefined), '');
+  });
+});
+
+describe('formatKeywords', () => {
+  it('lists the keywords in package.json order', () => {
+    assert.equal(formatKeywords(['queue', 'sqs', 'lambda']), 'queue, sqs, lambda');
+  });
+
+  it('leaves out the discovery tag every package carries', () => {
+    assert.equal(formatKeywords(['cdk-blocks', 'queue', 'cdk-blocks-queue']), 'queue, cdk-blocks-queue');
+  });
+
+  it('returns an empty string when only the discovery tag is declared', () => {
+    assert.equal(formatKeywords(['cdk-blocks']), '');
+  });
+
+  it('drops blank entries, so the discovery tag plus blanks is an empty cell', () => {
+    assert.equal(formatKeywords(['cdk-blocks', '', ' ']), '');
+    assert.equal(formatKeywords([' queue ', '', 'sqs']), 'queue, sqs');
+  });
+
+  it('returns an empty string when keywords is absent or not an array', () => {
+    assert.equal(formatKeywords(undefined), '');
+    assert.equal(formatKeywords('queue, sqs'), '');
+  });
+});
+
+// The script roots itself at `<its own dir>/../packages`, so a copy placed in a
+// throwaway workspace's scripts/ sees that workspace as the repo. Each case runs
+// the real script against real files.
+describe('--check', () => {
+  const scriptsDir = dirname(fileURLToPath(import.meta.url));
+
+  function workspace(t, keywords) {
+    const dir = mkdtempSync(join(tmpdir(), 'sync-catalog-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+    mkdirSync(join(dir, 'scripts'));
+    for (const file of ['sync-catalog.mjs', 'block-packages.mjs', 'discovery-keyword.mjs']) {
+      copyFileSync(join(scriptsDir, file), join(dir, 'scripts', file));
+    }
+    mkdirSync(join(dir, 'packages', 'blocks'), { recursive: true });
+    writeFileSync(join(dir, 'packages', 'blocks', 'README.md'), `# Blocks\n\n${BEGIN_MARKER}\n${END_MARKER}\n`);
+    mkdirSync(join(dir, 'packages', 'bb-queue'));
+    writeFileSync(join(dir, 'packages', 'bb-queue', 'README.md'), '# Queue\n\nA message queue.\n');
+    writeFileSync(join(dir, 'packages', 'bb-queue', 'package.json'), JSON.stringify({ name: 'bb-queue', keywords }));
+    return dir;
+  }
+
+  function run(dir, mode) {
+    return spawnSync(process.execPath, [join(dir, 'scripts', 'sync-catalog.mjs'), mode], { encoding: 'utf-8' });
+  }
+
+  it('passes for a synced catalog whose block declares its own keywords', (t) => {
+    const dir = workspace(t, ['cdk-blocks', 'queue', 'sqs']);
+    assert.equal(run(dir, '--write').status, 0);
+
+    assert.equal(run(dir, '--check').status, 0);
+  });
+
+  it('fails for a synced catalog whose block declares only the discovery tag', (t) => {
+    const dir = workspace(t, ['cdk-blocks']);
+    assert.equal(run(dir, '--write').status, 0);
+
+    const check = run(dir, '--check');
+    assert.equal(check.status, 1);
+    assert.match(check.stderr, /No keywords for the Building Block catalog: bb-queue\./);
+  });
+
+  it('fails when the committed catalog no longer matches package.json keywords', (t) => {
+    const dir = workspace(t, ['cdk-blocks', 'queue']);
+    assert.equal(run(dir, '--write').status, 0);
+    writeFileSync(
+      join(dir, 'packages', 'bb-queue', 'package.json'),
+      JSON.stringify({ name: 'bb-queue', keywords: ['cdk-blocks', 'queue', 'sqs'] }),
+    );
+
+    const check = run(dir, '--check');
+    assert.equal(check.status, 1);
+    assert.match(check.stderr, /catalog in packages\/blocks\/README\.md is out of date/);
   });
 });

@@ -2,7 +2,7 @@
   "name": "@aws-cdk-blocks/bb-file-bucket",
   "version": "1.0.0",
   "keywords": [
-    "aws-blocks",
+    "cdk-blocks",
     "storage",
     "s3",
     "file-upload"

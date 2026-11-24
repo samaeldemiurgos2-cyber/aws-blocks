@@ -163,27 +163,27 @@ Run `npm run docs` in the app to list the Building Blocks shipped with its insta
 <!-- BEGIN:block-catalog -->
 | Block | What it does | Keywords |
 |-------|--------------|----------|
-| auth-common | Shared interfaces and UI components for CDK Blocks authentication: the `BlocksAuth` contract that `Auth` implements, the `AuthErrors` vocabulary, and the provider-agnostic sign-in UI. | — |
-| bb-agent | AI agent with streaming, tool calling, and conversation persistence. | — |
-| bb-app-setting | A single application configuration value backed by SSM Parameter Store. | — |
-| bb-async-job | Background job processing backed by SQS, run on Lambda or a container. | queue, job, background, async, worker, submit, batch, retry, status, transitions, SQS |
-| bb-auth | `Auth` is the single authentication Building Block for CDK Blocks: one import and one options object for email + password, social sign-in, generic OIDC and SAML. | — |
-| bb-compute | The `Compute` Building Block selects where a workload runs: `type: 'serverless'` (AWS Lambda) or `type: 'container'` (AWS Fargate). | — |
-| bb-cron-job | Scheduled task execution backed by EventBridge Scheduler and Lambda, or a container compute for long-running jobs. | cron, schedule, timer, periodic, recurring, rate, EventBridge, background, interval |
-| bb-dashboard | Auto-generated CloudWatch Dashboard for application observability. | — |
-| bb-database | `Database` is a PostgreSQL schema on a cluster: Aurora DSQL by default, or Aurora PostgreSQL Serverless v2 created with the express configuration. | — |
-| bb-email-client | Transactional email sending via Amazon SES. | — |
-| bb-file-bucket | File storage backed by Amazon S3. | — |
-| bb-knowledge-base | Semantic document retrieval backed by Amazon Bedrock Knowledge Bases. | — |
-| bb-kv-store | Key-value and document storage backed by DynamoDB, with optional secondary indexes. | — |
-| bb-logger | Structured logging with consistent JSON format, log levels, and contextual metadata. | — |
-| bb-metrics | Custom application metrics backed by Amazon CloudWatch (via Embedded Metric Format). | — |
-| bb-realtime | Real-time pub/sub messaging backed by API Gateway WebSocket + DynamoDB. | — |
-| bb-secret | A single application secret backed by AWS Secrets Manager. | — |
-| bb-tracer | Distributed tracing backed by AWS X-Ray. | — |
-| core | Core primitives for building full-stack applications with CDK Blocks. | — |
-| hosting | Low-level CDK L3 constructs for deploying web applications on AWS | — |
-| pipeline | CDK Pipelines-based CI/CD construct for CDK Blocks applications. | — |
+| auth-common | Shared interfaces and UI components for CDK Blocks authentication: the `BlocksAuth` contract that `Auth` implements, the `AuthErrors` vocabulary, and the provider-agnostic sign-in UI. | authentication, auth-ui |
+| bb-agent | AI agent with streaming, tool calling, and conversation persistence. | ai, agent, llm, bedrock, chatbot |
+| bb-app-setting | A single application configuration value backed by SSM Parameter Store. | configuration, ssm, parameter-store, secrets |
+| bb-async-job | Background job processing backed by SQS, run on Lambda or a container. | background-jobs, queue, sqs, lambda, job, background, async, worker, submit, batch, retry, status, transitions |
+| bb-auth | `Auth` is the single authentication Building Block for CDK Blocks: one import and one options object for email + password, social sign-in, generic OIDC and SAML. | authentication, auth, cognito, oidc |
+| bb-compute | The `Compute` Building Block selects where a workload runs: `type: 'serverless'` (AWS Lambda) or `type: 'container'` (AWS Fargate). | compute, serverless, container, fargate |
+| bb-cron-job | Scheduled task execution backed by EventBridge Scheduler and Lambda, or a container compute for long-running jobs. | cron, scheduler, eventbridge, lambda, schedule, timer, periodic, recurring, rate, background, interval |
+| bb-dashboard | Auto-generated CloudWatch Dashboard for application observability. | cloudwatch, dashboard, observability |
+| bb-database | `Database` is a PostgreSQL schema on a cluster: Aurora DSQL by default, or Aurora PostgreSQL Serverless v2 created with the express configuration. | database, postgresql, sql, aurora, dsql, serverless |
+| bb-email-client | Transactional email sending via Amazon SES. | email, ses, transactional-email |
+| bb-file-bucket | File storage backed by Amazon S3. | storage, s3, file-upload |
+| bb-knowledge-base | Semantic document retrieval backed by Amazon Bedrock Knowledge Bases. | knowledge-base, bedrock, semantic-search |
+| bb-kv-store | Key-value and document storage backed by DynamoDB, with optional secondary indexes. | key-value, document, dynamodb, nosql, storage |
+| bb-logger | Structured logging with consistent JSON format, log levels, and contextual metadata. | logging, structured-logging, observability |
+| bb-metrics | Custom application metrics backed by Amazon CloudWatch (via Embedded Metric Format). | metrics, cloudwatch, observability, emf |
+| bb-realtime | Real-time pub/sub messaging backed by API Gateway WebSocket + DynamoDB. | realtime, websocket, pubsub, api-gateway |
+| bb-secret | A single application secret backed by AWS Secrets Manager. | secret, secrets-manager, credentials |
+| bb-tracer | Distributed tracing backed by AWS X-Ray. | tracing, distributed-tracing, xray, observability |
+| core | Core primitives for building full-stack applications with CDK Blocks. | framework, typescript, backend, primitives |
+| hosting | Low-level CDK L3 constructs for deploying web applications on AWS | hosting, cloudfront, s3, static-site, ssr |
+| pipeline | CDK Pipelines-based CI/CD construct for CDK Blocks applications. | ci-cd, pipelines, deployment, codepipeline |
 <!-- END:block-catalog -->
 
 ## Testing

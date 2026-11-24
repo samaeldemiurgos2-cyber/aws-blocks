@@ -2,7 +2,7 @@
   "name": "@aws-cdk-blocks/bb-lambda-compute",
   "version": "1.0.0",
   "keywords": [
-    "aws-blocks",
+    "cdk-blocks",
     "lambda",
     "serverless",
     "api-gateway",

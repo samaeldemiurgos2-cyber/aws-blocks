@@ -6,8 +6,6 @@ Scheduled task execution backed by EventBridge Scheduler and Lambda, or a contai
 
 **When NOT to use:** Work started by a request or an event: use `AsyncJob`. `CronJob` has no runtime methods, so code cannot start a run.
 
-**Keywords:** cron, schedule, timer, periodic, recurring, rate, EventBridge, background, interval
-
 > Design & mock parity details: [DESIGN.md](./DESIGN.md)
 
 ## Quick start
