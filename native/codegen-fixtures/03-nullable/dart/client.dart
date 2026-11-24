@@ -3,9 +3,19 @@
 // Source: test v1.0.0
 // Requires blocks_runtime 1.0.0 or later.
 // ignore_for_file: constant_identifier_names
+// dart format width=80
 
 import 'package:blocks_runtime/blocks_runtime.dart';
-export 'package:blocks_runtime/blocks_runtime.dart' show ApiException, BlocksClient, BlocksException, ClientClosedException, InMemorySessionStore, SessionStore, TransportException, isBlocksError;
+export 'package:blocks_runtime/blocks_runtime.dart'
+    show
+        ApiException,
+        BlocksClient,
+        BlocksException,
+        ClientClosedException,
+        InMemorySessionStore,
+        SessionStore,
+        TransportException,
+        isBlocksError;
 
 // --- Models ---
 
@@ -16,11 +26,7 @@ class GetProfileResult {
   final String? bio;
   final int? age;
 
-  const GetProfileResult({
-    required this.name,
-    this.bio,
-    this.age,
-  });
+  const GetProfileResult({required this.name, this.bio, this.age});
 
   factory GetProfileResult.fromJson(Map<String, dynamic> json) {
     return GetProfileResult(
@@ -53,20 +59,16 @@ class GetProfileResult {
   String toString() => 'GetProfileResult(name: $name, bio: $bio, age: $age)';
 }
 
-
 class Api {
   final BlocksClient _client;
   Api(this._client);
 
   Future<GetProfileResult> getProfile({required String userId}) async {
-    final params = <dynamic>[
-      userId,
-    ];
+    final params = <dynamic>[userId];
     final result = await _client.call('api.getProfile', params);
     return GetProfileResult.fromJson(result as Map<String, dynamic>);
   }
 }
-
 
 // --- CDK Blocks Client ---
 
@@ -85,4 +87,3 @@ class Blocks {
   /// does nothing more.
   void close() => _client.close();
 }
-

@@ -94,7 +94,17 @@ void main() {
             'Run: REGENERATE_FIXTURES=1 dart test test/golden_file_test.dart',
           );
         }
-        expect(output, goldenFile.readAsStringSync());
+        expect(
+          output,
+          goldenFile.readAsStringSync(),
+          reason:
+              'Output is formatted by the dart_style this package resolves. '
+              'If only the layout differs, a dart_style release changed how it '
+              'formats this code: regenerate the goldens with '
+              'REGENERATE_FIXTURES=1 dart test test/golden_file_test.dart '
+              '(analyze-fixture-goldens.sh checks them with the same '
+              'dart_style).',
+        );
       }
     });
   }

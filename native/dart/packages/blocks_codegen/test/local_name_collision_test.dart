@@ -5,6 +5,8 @@ import 'package:blocks_codegen/src/builder.dart';
 import 'package:blocks_codegen/src/generator.dart';
 import 'package:test/test.dart';
 
+import 'support/source_matchers.dart';
+
 /// The generated code declares its own names next to user-chosen ones: an
 /// operation's `params` array and `result`, the `==` parameter `other`, the
 /// `Blocks` constructor's `client` local and its `baseUrl` / `sessionStore`
@@ -79,23 +81,31 @@ void main() {
   group('operation parameters named after a generated local', () {
     test('a parameter named `result` keeps its name; the local yields', () {
       final body = runBody(gen.generate(model(params: [param('result')])));
-      expect(body, contains('Future<String> run({required String result})'));
-      expect(body, contains('      result,\n'));
       expect(
         body,
-        contains(r"    final $result = await _client.call('api.run', params);"),
+        containsSource('Future<String> run({required String result})'),
       );
-      expect(body, contains(r'    return $result as String;'));
-      expect(body, isNot(contains('final result =')));
+      expect(body, containsSource('      result,\n'));
+      expect(
+        body,
+        containsSource(
+          r"    final $result = await _client.call('api.run', params);",
+        ),
+      );
+      expect(body, containsSource(r'    return $result as String;'));
+      expect(body, isNot(containsSource('final result =')));
     });
 
     test('a parameter named `params` keeps its name; the local yields', () {
       final body = runBody(gen.generate(model(params: [param('params')])));
-      expect(body, contains('Future<String> run({required String params})'));
-      expect(body, contains(r'    final $params = <dynamic>['));
-      expect(body, contains('      params,\n'));
-      expect(body, contains(r"await _client.call('api.run', $params);"));
-      expect(body, contains('    return result as String;'));
+      expect(
+        body,
+        containsSource('Future<String> run({required String params})'),
+      );
+      expect(body, containsSource(r'    final $params = <dynamic>['));
+      expect(body, containsSource('      params,\n'));
+      expect(body, containsSource(r"await _client.call('api.run', $params);"));
+      expect(body, containsSource('    return result as String;'));
     });
 
     test('`result` and `params` together, optional, and in containers', () {
@@ -112,7 +122,7 @@ void main() {
       );
       expect(
         body,
-        contains(
+        containsSource(
           '      result.map((e) => e.toJson()).toList(),\n'
           '      if (params != null) '
           'params.map((k, v) => MapEntry(k, v.toJson())),\n',
@@ -120,13 +130,13 @@ void main() {
       );
       expect(
         body,
-        contains(
+        containsSource(
           r"    final $result = await _client.call('api.run', $params);",
         ),
       );
       expect(
         body,
-        contains(
+        containsSource(
           r'    return ($result as List<dynamic>)'
           '.map((e) => Leaf.fromJson(e as Map<String, dynamic>)).toList();',
         ),
@@ -139,14 +149,14 @@ void main() {
       );
       expect(
         body,
-        contains(
+        containsSource(
           '      result,\n'
           r'      $result,'
           '\n',
         ),
       );
-      expect(body, contains(r'    final $result2 = await _client.call('));
-      expect(body, contains(r'    return $result2 as String;'));
+      expect(body, containsSource(r'    final $result2 = await _client.call('));
+      expect(body, containsSource(r'    return $result2 as String;'));
     });
 
     test('a void operation declares no `result`, so nothing yields', () {
@@ -155,7 +165,10 @@ void main() {
           model(params: [param('result')], result: const PrimitiveType('void')),
         ),
       );
-      expect(body, contains("    await _client.call('api.run', params);"));
+      expect(
+        body,
+        containsSource("    await _client.call('api.run', params);"),
+      );
     });
 
     test('closure parameter names are never shadowing: each reads its own', () {
@@ -179,7 +192,7 @@ void main() {
       );
       expect(
         body,
-        contains(
+        containsSource(
           '      e.map((e) => e.map((e1) => e1.toJson()).toList()).toList(),\n'
           '      e1.map((e) => e.toJson()).toList(),\n'
           '      k.map((k, v) => MapEntry(k, v.toJson())),\n'
@@ -189,7 +202,7 @@ void main() {
           '      payload,\n',
         ),
       );
-      expect(body, contains("    final result = await _client.call("));
+      expect(body, containsSource("    final result = await _client.call("));
     });
 
     test('names that collide with nothing are unchanged', () {
@@ -199,10 +212,7 @@ void main() {
       expect(
         body,
         '  Future<String> run({required String id, required String name}) async {\n'
-        '    final params = <dynamic>[\n'
-        '      id,\n'
-        '      name,\n'
-        '    ];\n'
+        '    final params = <dynamic>[id, name];\n'
         "    final result = await _client.call('api.run', params);\n"
         '    return result as String;',
       );
@@ -238,12 +248,12 @@ void main() {
         gen.generate(model(types: {'Everything': everything()})),
         'Everything',
       );
-      expect(cls, contains(r'  bool operator ==(Object $other) =>'));
-      expect(cls, contains(r'      identical(this, $other) ||'));
-      expect(cls, contains(r'      $other is Everything &&'));
-      expect(cls, contains(r'          other == $other.other &&'));
-      expect(cls, contains(r'          result == $other.result &&'));
-      expect(cls, isNot(contains('other == other.other')));
+      expect(cls, containsSource(r'  bool operator ==(Object $other) =>'));
+      expect(cls, containsSource(r'      identical(this, $other) ||'));
+      expect(cls, containsSource(r'      $other is Everything &&'));
+      expect(cls, containsSource(r'          other == $other.other &&'));
+      expect(cls, containsSource(r'          result == $other.result &&'));
+      expect(cls, isNot(containsSource('other == other.other')));
     });
 
     test('a union variant field named `other` compares too', () {
@@ -268,9 +278,9 @@ void main() {
         gen.generate(model(types: {'Shape': union})),
         'AShape',
       );
-      expect(cls, contains(r'  bool operator ==(Object $other) =>'));
-      expect(cls, contains(r'      $other is AShape &&'));
-      expect(cls, contains(r'          other == $other.other;'));
+      expect(cls, containsSource(r'  bool operator ==(Object $other) =>'));
+      expect(cls, containsSource(r'      $other is AShape &&'));
+      expect(cls, containsSource(r'          other == $other.other;'));
     });
 
     test('fromJson and toJson read the right value for every field', () {
@@ -282,7 +292,7 @@ void main() {
       // `json` parameter and the closures stay as they are.
       expect(
         cls,
-        contains(
+        containsSource(
           '  factory Everything.fromJson(Map<String, dynamic> json) {\n'
           '    return Everything(\n'
           "      params: json['params'] as String,\n"
@@ -307,7 +317,7 @@ void main() {
       // toJson: a field is read outside any closure, so it isn't shadowed.
       expect(
         cls,
-        contains(
+        containsSource(
           "      'value': value?.toJson(),\n"
           "      'payload': payload,\n"
           "      'other': other,\n"
@@ -324,7 +334,7 @@ void main() {
       final cls = classBody(gen.generate(model()), 'Leaf');
       expect(
         cls,
-        contains(
+        containsSource(
           '  bool operator ==(Object other) =>\n'
           '      identical(this, other) ||\n'
           '      other is Leaf &&\n'
@@ -344,38 +354,38 @@ void main() {
           model(namespaces: ['client', 'baseUrl', 'sessionStore', 'api']),
         ),
       );
-      expect(out, contains('  late final ClientApi client;'));
-      expect(out, contains('  late final BaseUrlApi baseUrl;'));
-      expect(out, contains('  late final SessionStoreApi sessionStore;'));
+      expect(out, containsSource('  late final ClientApi client;'));
+      expect(out, containsSource('  late final BaseUrlApi baseUrl;'));
+      expect(out, containsSource('  late final SessionStoreApi sessionStore;'));
       // The constructor's parameters are public API and keep their names.
       expect(
         out,
-        contains(
+        containsSource(
           '  Blocks({required String baseUrl, SessionStore? sessionStore}) {',
         ),
       );
       expect(
         out,
-        contains(
+        containsSource(
           r'    final $client = BlocksClient(baseUrl: baseUrl, '
           'sessionStore: sessionStore);',
         ),
       );
-      expect(out, contains(r'    _client = $client;'));
-      expect(out, contains(r'    client = ClientApi($client);'));
-      expect(out, contains(r'    this.baseUrl = BaseUrlApi($client);'));
+      expect(out, containsSource(r'    _client = $client;'));
+      expect(out, containsSource(r'    client = ClientApi($client);'));
+      expect(out, containsSource(r'    this.baseUrl = BaseUrlApi($client);'));
       expect(
         out,
-        contains(r'    this.sessionStore = SessionStoreApi($client);'),
+        containsSource(r'    this.sessionStore = SessionStoreApi($client);'),
       );
-      expect(out, contains(r'    api = Api($client);'));
+      expect(out, containsSource(r'    api = Api($client);'));
     });
 
     test('other namespaces are unchanged', () {
       final out = facade(gen.generate(model(namespaces: ['api', 'todos'])));
       expect(
         out,
-        contains(
+        containsSource(
           '    final client = BlocksClient(baseUrl: baseUrl, sessionStore: sessionStore);\n'
           '    _client = client;\n'
           '    api = Api(client);\n'

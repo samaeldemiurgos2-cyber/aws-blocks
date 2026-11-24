@@ -10,6 +10,8 @@ import 'package:blocks_codegen/src/generator.dart';
 import 'package:blocks_codegen/src/parser.dart';
 import 'package:test/test.dart';
 
+import 'support/source_matchers.dart';
+
 /// The third-party tag the probes bind. A built-in tag short-circuits binding
 /// resolution, so a probe using one cannot reach the rule under test.
 const _tag = 'example-iot/device-link';
@@ -30,19 +32,19 @@ void main() {
 
       expect(
         output,
-        contains(
+        containsSource(
           "import 'package:example_iot_native/example_iot_native.dart' "
           'show DeviceLink;',
         ),
       );
-      expect(output, contains('Future<DeviceLink> connectDevice()'));
+      expect(output, containsSource('Future<DeviceLink> connectDevice()'));
       expect(
         output,
-        contains(
+        containsSource(
           "return DeviceLink.fromBlocksDescriptor(validateTransferableDescriptor(result, expectedTag: '$_tag'));",
         ),
       );
-      expect(output, isNot(contains('UnknownTransferable')));
+      expect(output, isNot(containsSource('UnknownTransferable')));
       expect(model.warnings, isEmpty);
     });
 
@@ -52,11 +54,11 @@ void main() {
 
       expect(
         output,
-        contains('Future<DeviceLink<ConnectDeviceResultMessage>> '),
+        containsSource('Future<DeviceLink<ConnectDeviceResultMessage>> '),
       );
       expect(
         output,
-        contains(
+        containsSource(
           "return DeviceLink<ConnectDeviceResultMessage>.fromBlocksDescriptor(validateTransferableDescriptor(result, expectedTag: '$_tag'), (json) => ConnectDeviceResultMessage.fromJson(json));",
         ),
       );
@@ -65,10 +67,7 @@ void main() {
 
     test('the runtime import is kept and declared imports are sorted', () {
       final output = _generate(_build(_specJson(extras: _catalogs())));
-      final directives = const LineSplitter()
-          .convert(output)
-          .where((l) => l.startsWith('import ') || l.startsWith('export '))
-          .toList();
+      final directives = _directives(output, includeExports: true);
 
       expect(directives, [
         "import 'package:blocks_runtime/blocks_runtime.dart';",
@@ -95,10 +94,13 @@ void main() {
       // `Msg` is claimed by api.kind's result, so the `$ref`ed schema becomes
       // `Msg2`. The type arg and its decoder must both follow the rename, or
       // the client hydrates with whatever kept the old name.
-      expect(output, contains('Future<DeviceLink<Msg2>> connectDevice()'));
-      expect(output, contains('(json) => Msg2.fromJson(json)'));
-      expect(output, isNot(contains('(json) => Msg.fromJson(json)')));
-      expect(output, isNot(contains('DeviceLink<Msg>')));
+      expect(
+        output,
+        containsSource('Future<DeviceLink<Msg2>> connectDevice()'),
+      );
+      expect(output, containsSource('(json) => Msg2.fromJson(json)'));
+      expect(output, isNot(containsSource('(json) => Msg.fromJson(json)')));
+      expect(output, isNot(containsSource('DeviceLink<Msg>')));
     });
 
     test('a negative generic arity is an error', () {
@@ -113,8 +115,8 @@ void main() {
     test('a quote in a string pattern is escaped, not raw', () {
       final output = _generateFrom(_patternSpec("it's|x"));
 
-      expect(output, contains(r"RegExp('it\'s|x')"));
-      expect(output, isNot(contains("RegExp(r'it")));
+      expect(output, containsSource(r"RegExp('it\'s|x')"));
+      expect(output, isNot(containsSource("RegExp(r'it")));
     });
 
     test('a pattern that is not a regular expression is an error', () {
@@ -132,8 +134,8 @@ void main() {
       // escaped branch: a raw string cannot carry one.
       final output = _generateFrom(_patternSpec('^a\rb\$'));
 
-      expect(output, contains(r"RegExp('^a\rb"));
-      expect(output, isNot(contains("RegExp(r'^a")));
+      expect(output, containsSource(r"RegExp('^a\rb"));
+      expect(output, isNot(containsSource("RegExp(r'^a")));
     });
 
     // This generator allocates a legal, distinct Dart class and field for any
@@ -156,7 +158,7 @@ void main() {
           ).allMatches(output).map((m) => m.group(1)).toList();
           expect(classes, isNotEmpty, reason: name);
           expect(classes.where((c) => c != 'Blocks'), isNotEmpty, reason: name);
-          expect(output, isNot(contains('class Api.')), reason: name);
+          expect(output, isNot(containsSource('class Api.')), reason: name);
         }
       },
     );
@@ -178,9 +180,9 @@ void main() {
     test('a dotted namespace yields one class and one identifier', () {
       final output = _generateFrom(_namespaceSpec('api.foo.bar'));
 
-      expect(output, contains('class ApiFooApi {'));
-      expect(output, contains('late final ApiFooApi apiFoo;'));
-      expect(output, isNot(contains('Api.fooApi')));
+      expect(output, containsSource('class ApiFooApi {'));
+      expect(output, containsSource('late final ApiFooApi apiFoo;'));
+      expect(output, isNot(containsSource('Api.fooApi')));
     });
 
     test('a declared package cannot be the runtime the client imports', () {
@@ -253,10 +255,11 @@ void main() {
           .replaceAll(RegExp(r"'(?:[^'\\\n]|\\.)*'"), "''")
           .replaceAll(RegExp(r'"(?:[^"\\\n]|\\.)*"'), "''");
 
-      final shown = RegExp(r"^import '[^']+' show ([^;]+);", multiLine: true)
-          .allMatches(output)
-          .expand((m) => m.group(1)!.split(',').map((n) => n.trim()))
-          .toSet();
+      final shown =
+          RegExp(r"^import '[^']+'\s+show\s+([^;]+);", multiLine: true)
+              .allMatches(output)
+              .expand((m) => m.group(1)!.split(',').map((n) => n.trim()))
+              .toSet();
       // Every position a type can occupy: call, generic open, member access,
       // generic close, generic comma, statement end, index close, nullable,
       // and a bare annotation. Requiring a lowercase letter drops the all-caps
@@ -267,7 +270,11 @@ void main() {
         r'\s*(?:[(<.>,;)}{\]?]|\s+[A-Za-z_])',
       ).allMatches(code).map((m) => m.group(1)!).toSet();
 
-      expect(referenced, contains('BlocksClient'), reason: 'extraction works');
+      expect(
+        referenced,
+        containsSource('BlocksClient'),
+        reason: 'extraction works',
+      );
       expect(
         referenced
             .difference(declaredTypeNames(code))
@@ -282,7 +289,7 @@ void main() {
 
       expect(
         output,
-        contains(
+        containsSource(
           "import 'package:example_iot_native/example_iot_native.dart' "
           'show DeviceLink;',
         ),
@@ -290,7 +297,7 @@ void main() {
       expect(
         output,
         isNot(
-          contains(
+          containsSource(
             "import 'package:example_iot_native/example_iot_native.dart';",
           ),
         ),
@@ -302,7 +309,7 @@ void main() {
         _build(_specWith(_binding(export: 'device-link'))),
       );
 
-      expect(output, contains('Future<DeviceLink> connectDevice()'));
+      expect(output, containsSource('Future<DeviceLink> connectDevice()'));
     });
 
     test('only each segment\'s first character is raised', () {
@@ -318,7 +325,7 @@ void main() {
 
         expect(
           output,
-          contains('Future<${entry.value}> connectDevice()'),
+          containsSource('Future<${entry.value}> connectDevice()'),
           reason: entry.key,
         );
       }
@@ -334,7 +341,7 @@ void main() {
         ),
       );
 
-      expect(output, isNot(contains('example_iot_native')));
+      expect(output, isNot(containsSource('example_iot_native')));
     });
   });
 
@@ -349,23 +356,23 @@ void main() {
         ),
       );
 
-      expect(output, contains('Future<RealtimeChannel<dynamic>> '));
-      expect(output, contains('RealtimeChannel.fromJsonValue('));
-      expect(output, isNot(contains('example_iot_native')));
-      expect(output, isNot(contains('fromBlocksDescriptor')));
+      expect(output, containsSource('Future<RealtimeChannel<dynamic>> '));
+      expect(output, containsSource('RealtimeChannel.fromJsonValue('));
+      expect(output, isNot(containsSource('example_iot_native')));
+      expect(output, isNot(containsSource('fromBlocksDescriptor')));
     });
 
     test('a tag differing only in case falls back', () {
       final model = _build(_specWith(_binding(tag: 'Example-IoT/Device-Link')));
 
-      expect(_generate(model), contains('Future<UnknownTransferable> '));
+      expect(_generate(model), containsSource('Future<UnknownTransferable> '));
       expect(model.warnings, contains(contains('AWSBLOCKS-NATIVE-001')));
     });
 
     test('a tag differing only by trailing whitespace falls back', () {
       final output = _generate(_build(_specWith(_binding(tag: '$_tag '))));
 
-      expect(output, contains('Future<UnknownTransferable> '));
+      expect(output, containsSource('Future<UnknownTransferable> '));
     });
 
     test('a tag that only normalises to the method\'s falls back', () {
@@ -374,7 +381,7 @@ void main() {
       const folding = '\uff45xample-iot/device\uff0dlink';
       final output = _generate(_build(_specWith(_binding(tag: folding))));
 
-      expect(output, contains('Future<UnknownTransferable> '));
+      expect(output, containsSource('Future<UnknownTransferable> '));
     });
 
     test('a package offered on no Dart platform falls back', () {
@@ -394,7 +401,7 @@ void main() {
         ),
       );
 
-      expect(_generate(model), contains('Future<UnknownTransferable> '));
+      expect(_generate(model), containsSource('Future<UnknownTransferable> '));
       expect(model.warnings, contains(contains('AWSBLOCKS-NATIVE-001')));
     });
 
@@ -403,7 +410,7 @@ void main() {
         optedOutPackages: const {'example-iot-native'},
       ).build(const OpenRpcParser().parse(_specJson(extras: _catalogs())));
 
-      expect(_generate(model), contains('Future<UnknownTransferable> '));
+      expect(_generate(model), containsSource('Future<UnknownTransferable> '));
       expect(model.warnings, contains(contains('AWSBLOCKS-NATIVE-001')));
     });
 
@@ -412,13 +419,13 @@ void main() {
         optedOutPackages: const {'some-other-native'},
       ).build(const OpenRpcParser().parse(_specJson(extras: _catalogs())));
 
-      expect(_generate(model), contains('Future<DeviceLink> '));
+      expect(_generate(model), containsSource('Future<DeviceLink> '));
     });
 
     test('a kind other than transferable falls back', () {
       final model = _build(_specWith(_binding(kind: 'facade')));
 
-      expect(_generate(model), contains('Future<UnknownTransferable> '));
+      expect(_generate(model), containsSource('Future<UnknownTransferable> '));
     });
 
     test('a nested bound transferable stays dynamic', () {
@@ -436,8 +443,8 @@ void main() {
       );
       final output = _generate(model);
 
-      expect(output, contains('final dynamic link;'));
-      expect(output, isNot(contains('fromBlocksDescriptor')));
+      expect(output, containsSource('final dynamic link;'));
+      expect(output, isNot(containsSource('fromBlocksDescriptor')));
       expect(model.warnings, isEmpty);
     });
 
@@ -462,7 +469,7 @@ void main() {
 
       final reported = model.warnings.first;
       expect(reported, startsWith('AWSBLOCKS-NATIVE-004: '));
-      expect(reported, contains(r'a\nAWSBLOCKS-NATIVE-001: forged'));
+      expect(reported, containsSource(r'a\nAWSBLOCKS-NATIVE-001: forged'));
       expect(reported, isNot(contains('\n')));
     });
 
@@ -474,7 +481,10 @@ void main() {
       final reported = model.warnings.firstWhere(
         (w) => w.startsWith('AWSBLOCKS-NATIVE-001'),
       );
-      expect(reported, contains(r'api.get\nAWSBLOCKS-NATIVE-999: forged'));
+      expect(
+        reported,
+        containsSource(r'api.get\nAWSBLOCKS-NATIVE-999: forged'),
+      );
       expect(reported, isNot(contains('\n')));
     });
 
@@ -494,8 +504,8 @@ void main() {
       );
       final output = _generate(model);
 
-      expect(output, contains('Future<dynamic> '));
-      expect(output, isNot(contains('fromBlocksDescriptor')));
+      expect(output, containsSource('Future<dynamic> '));
+      expect(output, isNot(containsSource('fromBlocksDescriptor')));
       expect(model.warnings, isEmpty);
     });
 
@@ -506,7 +516,7 @@ void main() {
 
       expect(
         _generate(model),
-        contains('Future<UnknownTransferable> streamed('),
+        containsSource('Future<UnknownTransferable> streamed('),
       );
       expect(
         model.warnings,
@@ -527,7 +537,7 @@ void main() {
         ),
       );
 
-      expect(_generate(model), contains('Future<UnknownTransferable> '));
+      expect(_generate(model), containsSource('Future<UnknownTransferable> '));
       expect(model.warnings, contains(contains('AWSBLOCKS-NATIVE-001')));
     });
 
@@ -545,7 +555,10 @@ void main() {
 
       // This runtime hydrates a channel of any payload type
       // (`RealtimeChannel.fromJsonValue`), so no AWSBLOCKS-NATIVE-002.
-      expect(_generate(model), contains('Future<RealtimeChannel<String>> '));
+      expect(
+        _generate(model),
+        containsSource('Future<RealtimeChannel<String>> '),
+      );
       expect(model.warnings, isNot(contains(contains('AWSBLOCKS-NATIVE-002'))));
     });
   });
@@ -631,7 +644,10 @@ void main() {
         ),
       );
 
-      expect(_generate(model), contains('Future<DeviceLink> connectDevice()'));
+      expect(
+        _generate(model),
+        containsSource('Future<DeviceLink> connectDevice()'),
+      );
     });
 
     test('a name a named schema declares is an error', () {
@@ -772,9 +788,9 @@ void main() {
       );
       final output = _generate(model);
 
-      expect(output, contains('class Telemetry {'));
-      expect(output, contains('Future<DeviceLink> connectDevice()'));
-      expect(output, contains('Future<Telemetry> readTelemetry()'));
+      expect(output, containsSource('class Telemetry {'));
+      expect(output, containsSource('Future<DeviceLink> connectDevice()'));
+      expect(output, containsSource('Future<Telemetry> readTelemetry()'));
     });
 
     test('an inert binding still fails on a runtime-name collision', () {
@@ -807,8 +823,8 @@ void main() {
         ),
       );
 
-      expect(output, contains('class Telemetry {'));
-      expect(output, contains('Future<Telemetry> connectDevice()'));
+      expect(output, containsSource('class Telemetry {'));
+      expect(output, containsSource('Future<Telemetry> connectDevice()'));
     });
 
     test('blocksRuntimeTypeNames matches the runtime library it guards', () {
@@ -873,7 +889,7 @@ void main() {
 
       expect(
         model.warnings,
-        contains(
+        containsSource(
           'AWSBLOCKS-NATIVE-003: no binding references native package '
           "'unused-native'; it is not imported on dart.",
         ),
@@ -921,13 +937,13 @@ void main() {
 
       expect(
         model.warnings,
-        contains(
+        containsSource(
           "AWSBLOCKS-NATIVE-006: opted-out package 'example-iot-nativ' is not "
           'declared by x-blocks-native-packages; nothing was opted out for it '
           'on dart.',
         ),
       );
-      expect(_generate(model), contains('Future<DeviceLink> '));
+      expect(_generate(model), containsSource('Future<DeviceLink> '));
     });
 
     test('an opt-out with no catalog at all is still reported', () {
@@ -1209,7 +1225,7 @@ void main() {
 
       expect(
         output,
-        contains(
+        containsSource(
           "import 'package:example_iot_native/api.g.dart' show DeviceLink;",
         ),
       );
@@ -1228,7 +1244,7 @@ void main() {
 
       expect(
         output,
-        contains(
+        containsSource(
           "import 'package:example_iot_native/src/public_api.dart' "
           'show DeviceLink;',
         ),
@@ -1378,7 +1394,9 @@ void main() {
               .having(
                 (e) => e.message,
                 'message',
-                contains(r"export 'deviceLink\nAWSBLOCKS-NATIVE-999: forged'"),
+                containsSource(
+                  r"export 'deviceLink\nAWSBLOCKS-NATIVE-999: forged'",
+                ),
               )
               .having((e) => e.message, 'message', isNot(contains('\n'))),
         ),
@@ -1409,8 +1427,17 @@ void main() {
   });
 }
 
-List<String> _directives(String output) =>
-    output.split('\n').where((line) => line.startsWith('import ')).toList();
+/// The `import` directives of [output] (and its `export`s when
+/// [includeExports]), each on one line: the formatter splits a long `show`
+/// list over several.
+List<String> _directives(String output, {bool includeExports = false}) =>
+    RegExp(
+          includeExports ? r'^(?:import|export) [^;]*;' : r'^import [^;]*;',
+          multiLine: true,
+        )
+        .allMatches(output)
+        .map((m) => m[0]!.replaceAll(RegExp(r'\s+'), ' '))
+        .toList();
 
 /// A spec whose arity-one type-arg `$ref` target is renamed by the collision
 /// pass, so the decoder it named no longer exists under that name.

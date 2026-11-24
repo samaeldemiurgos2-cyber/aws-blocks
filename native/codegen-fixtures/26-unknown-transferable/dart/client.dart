@@ -3,10 +3,31 @@
 // Source: test v1.0.0
 // Requires blocks_runtime 1.0.0 or later.
 // ignore_for_file: constant_identifier_names
+// dart format width=80
 
 import 'package:blocks_runtime/blocks_runtime.dart';
-export 'package:blocks_runtime/blocks_runtime.dart' show ApiException, BlocksClient, BlocksException, ClientClosedException, InMemorySessionStore, SessionStore, TransportException, isBlocksError;
-export 'package:blocks_runtime/blocks_runtime.dart' show RealtimeChannel, FileDownloadHandle, FileUploadHandle, FileTransferException, RealtimeException, RealtimeChannelClosedException, RealtimeConnectionException, RealtimeSubscriptionEndedException, TransferableException, InvalidDescriptorException;
+export 'package:blocks_runtime/blocks_runtime.dart'
+    show
+        ApiException,
+        BlocksClient,
+        BlocksException,
+        ClientClosedException,
+        InMemorySessionStore,
+        SessionStore,
+        TransportException,
+        isBlocksError;
+export 'package:blocks_runtime/blocks_runtime.dart'
+    show
+        RealtimeChannel,
+        FileDownloadHandle,
+        FileUploadHandle,
+        FileTransferException,
+        RealtimeException,
+        RealtimeChannelClosedException,
+        RealtimeConnectionException,
+        RealtimeSubscriptionEndedException,
+        TransferableException,
+        InvalidDescriptorException;
 export 'package:blocks_runtime/blocks_runtime.dart' show UnknownTransferable;
 
 // --- Models ---
@@ -28,10 +49,7 @@ class ConnectDeviceResultMessage {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'temperature': temperature,
-      'humidity': humidity,
-    };
+    return {'temperature': temperature, 'humidity': humidity};
   }
 
   @override
@@ -45,9 +63,9 @@ class ConnectDeviceResultMessage {
   int get hashCode => Object.hash(temperature, humidity);
 
   @override
-  String toString() => 'ConnectDeviceResultMessage(temperature: $temperature, humidity: $humidity)';
+  String toString() =>
+      'ConnectDeviceResultMessage(temperature: $temperature, humidity: $humidity)';
 }
-
 
 // --- API Namespaces ---
 
@@ -55,23 +73,26 @@ class Api {
   final BlocksClient _client;
   Api(this._client);
 
-  Future<UnknownTransferable> getDeviceHandle({required String deviceId}) async {
-    final params = <dynamic>[
-      deviceId,
-    ];
+  Future<UnknownTransferable> getDeviceHandle({
+    required String deviceId,
+  }) async {
+    final params = <dynamic>[deviceId];
     final result = await _client.call('api.getDeviceHandle', params);
-    return UnknownTransferable.fromJson(result, expectedTag: 'example-iot/device-handle');
+    return UnknownTransferable.fromJson(
+      result,
+      expectedTag: 'example-iot/device-handle',
+    );
   }
 
   Future<UnknownTransferable> connectDevice({required String deviceId}) async {
-    final params = <dynamic>[
-      deviceId,
-    ];
+    final params = <dynamic>[deviceId];
     final result = await _client.call('api.connectDevice', params);
-    return UnknownTransferable.fromJson(result, expectedTag: 'example-iot/device-link');
+    return UnknownTransferable.fromJson(
+      result,
+      expectedTag: 'example-iot/device-link',
+    );
   }
 }
-
 
 // --- CDK Blocks Client ---
 
@@ -90,4 +111,3 @@ class Blocks {
   /// does nothing more.
   void close() => _client.close();
 }
-

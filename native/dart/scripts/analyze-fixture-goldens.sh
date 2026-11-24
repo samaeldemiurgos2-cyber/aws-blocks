@@ -41,6 +41,14 @@ stub_dependencies() {
 }
 
 mkdir -p "$WORK/lib"
+# The goldens are checked with the dart_style blocks_codegen formats with, at
+# the constraint its pubspec declares, not the SDK's bundled `dart format`:
+# the two can lay code out differently, and a golden can only match one.
+DART_STYLE_CONSTRAINT="$(sed -n 's/^  dart_style: *//p' "$DART_DIR/packages/blocks_codegen/pubspec.yaml")"
+if [ -z "$DART_STYLE_CONSTRAINT" ]; then
+  echo "error: no dart_style dependency in blocks_codegen/pubspec.yaml" >&2
+  exit 1
+fi
 cat > "$WORK/pubspec.yaml" <<YAML
 name: fixture_goldens
 publish_to: none
@@ -51,6 +59,7 @@ dependencies:
     path: $DART_DIR/packages/blocks_runtime
 $(stub_dependencies)
 dev_dependencies:
+  dart_style: $DART_STYLE_CONSTRAINT
   lints: ^6.0.0
 YAML
 cp "$DART_DIR/analysis_options.yaml" "$WORK/analysis_options.yaml"
@@ -81,6 +90,15 @@ fi
   cat "$WORK/pub-get.log" >&2
   exit 1
 }
+
+# The goldens are what blocks_codegen emits, in a package at the oldest
+# language version blocks_runtime supports: the dart_style it formats with
+# must leave them as is.
+if ! format_report="$(cd "$WORK" && "$DART" run dart_style:format --output=none --set-exit-if-changed lib 2>&1)"; then
+  printf '%s\n' "$format_report" >&2
+  echo "FAIL: dart_style would change Dart fixture golden(s); blocks_codegen must emit formatted code" >&2
+  exit 1
+fi
 
 # Machine format: SEVERITY|TYPE|CODE|FILE|LINE|COLUMN|LENGTH|MESSAGE.
 # `dart analyze` exits 0-3 when it ran: 0 no issues, 1 infos, 2 warnings,

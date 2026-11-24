@@ -8,6 +8,8 @@ import 'package:blocks_codegen/src/generator.dart';
 import 'package:blocks_codegen/src/parser.dart';
 import 'package:test/test.dart';
 
+import 'support/source_matchers.dart';
+
 // Names and values from the spec reach the generated library in two forms:
 //
 // - inside a string literal: a JSON key, a discriminant and its values, an
@@ -118,41 +120,43 @@ void main() {
 
     test('is read from JSON under its escaped key', () {
       final doc = _decl(output, 'Doc');
-      expect(doc, contains(r"      a$b: json['a\$b'] as String,"));
-      expect(doc, contains(r"      itS: json['it\'s'] as String?,"));
+      expect(doc, containsSource(r"      a$b: json['a\$b'] as String,"));
+      expect(doc, containsSource(r"      itS: json['it\'s'] as String?,"));
       expect(
         doc,
-        contains(r"      backSlash: json['back\\slash'] as String?,"),
+        containsSource(r"      backSlash: json['back\\slash'] as String?,"),
       );
     });
 
     test('is written to JSON under its escaped key', () {
       final doc = _decl(output, 'Doc');
-      expect(doc, contains(r"      'a\$b': a$b,"));
-      expect(doc, contains(r"      if (itS != null) 'it\'s': itS,"));
+      expect(doc, containsSource(r"      'a\$b': a$b,"));
+      expect(doc, containsSource(r"      if (itS != null) 'it\'s': itS,"));
       expect(
         doc,
-        contains(r"      if (backSlash != null) 'back\\slash': backSlash,"),
+        containsSource(
+          r"      if (backSlash != null) 'back\\slash': backSlash,",
+        ),
       );
     });
 
     test("is one of an open record's known keys, escaped", () {
       final open = _decl(output, 'Open');
-      expect(open, contains(r"    const knownKeys = {'a\$b', 'it\'s'};"));
+      expect(open, containsSource(r"    const knownKeys = {'a\$b', 'it\'s'};"));
     });
 
     test('is sent as a parameter in its slot', () {
       // Params are positional, so the spec name isn't sent.
       expect(
         output,
-        contains(
+        containsSource(
           r'      a$b,'
           '\n      itS,\n      backSlash,\n',
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           r'  Future<Doc> save({required String a$b, required String itS, '
           'required String backSlash}) async {',
         ),
@@ -167,8 +171,8 @@ void main() {
           reason: literal,
         );
       }
-      expect(output, isNot(contains(r"'a$b'")));
-      expect(output, isNot(contains("'it's'")));
+      expect(output, isNot(containsSource(r"'a$b'")));
+      expect(output, isNot(containsSource("'it's'")));
     });
   });
 
@@ -206,12 +210,17 @@ void main() {
 
     test('escapes its known keys and the keys its extras skip', () {
       final variant = _decl(output, 'ASignal');
-      expect(variant, contains(r"    const knownKeys = {'k\$ind', 'it\'s'};"));
       expect(
         variant,
-        contains(r"        if (!const {'k\$ind', 'it\'s'}.contains(e.key)) "),
+        containsSource(r"    const knownKeys = {'k\$ind', 'it\'s'};"),
       );
-      expect(variant, contains(r"      itS: json['it\'s'] as String,"));
+      expect(
+        variant,
+        containsSource(
+          r"        if (!const {'k\$ind', 'it\'s'}.contains(e.key)) ",
+        ),
+      );
+      expect(variant, containsSource(r"      itS: json['it\'s'] as String,"));
     });
   });
 
@@ -248,37 +257,45 @@ void main() {
 
     test('switches on the escaped discriminant and values', () {
       final base = _decl(output, 'Event');
-      expect(base, contains(r"    switch (json['k\$ind'] as String) {"));
+      expect(base, containsSource(r"    switch (json['k\$ind'] as String) {"));
       expect(
         base,
-        contains(r"      case 'it\'s': return ItSEvent.fromJson(json);"),
+        containsSource(r"      case 'it\'s': return ItSEvent.fromJson(json);"),
       );
       expect(
         base,
-        contains(r"      case 'a\$b': return A$bEvent.fromJson(json);"),
+        containsSource(r"      case 'a\$b': return A$bEvent.fromJson(json);"),
       );
       // `Event` is a result, so it is open: an unknown arm keeps the object.
       expect(
         base,
-        contains(
+        containsSource(
           '      default: return EventUnknown(_blocksFrozenObject(json));',
         ),
       );
       expect(
         _decl(output, 'EventUnknown'),
-        contains(r"  String get discriminator => json['k\$ind'] as String;"),
+        containsSource(
+          r"  String get discriminator => json['k\$ind'] as String;",
+        ),
       );
     });
 
     test('writes the escaped discriminant and value', () {
-      expect(_decl(output, 'ItSEvent'), contains(r"      'k\$ind': 'it\'s',"));
-      expect(_decl(output, r'A$bEvent'), contains(r"      'k\$ind': 'a\$b',"));
+      expect(
+        _decl(output, 'ItSEvent'),
+        containsSource(r"      'k\$ind': 'it\'s',"),
+      );
+      expect(
+        _decl(output, r'A$bEvent'),
+        containsSource(r"      'k\$ind': 'a\$b',"),
+      );
     });
 
     test("prints a variant whose class name holds `\$`", () {
       expect(
         _decl(output, r'A$bEvent'),
-        contains(r"  String toString() => 'A\$bEvent()';"),
+        containsSource(r"  String toString() => 'A\$bEvent()';"),
       );
     });
   });
@@ -295,13 +312,16 @@ void main() {
 
     test('maps each identifier to its escaped wire value', () {
       final mark = _decl(output, 'MarkKnown');
-      expect(mark, contains('  itS,\n  backSlash,\n  a\$b,\n  newLine\n;'));
-      expect(mark, contains(r"    'it\'s': itS,"));
-      expect(mark, contains(r"    'back\\slash': backSlash,"));
-      expect(mark, contains(r"    'a\$b': a$b,"));
-      expect(mark, contains(r"    'new\nline': newLine,"));
-      expect(mark, contains(r"    a$b: 'a\$b',"));
-      expect(mark, contains(r"    newLine: 'new\nline',"));
+      expect(
+        mark,
+        containsSource('  itS,\n  backSlash,\n  a\$b,\n  newLine\n;'),
+      );
+      expect(mark, containsSource(r"    'it\'s': itS,"));
+      expect(mark, containsSource(r"    'back\\slash': backSlash,"));
+      expect(mark, containsSource(r"    'a\$b': a$b,"));
+      expect(mark, containsSource(r"    'new\nline': newLine,"));
+      expect(mark, containsSource(r"    a$b: 'a\$b',"));
+      expect(mark, containsSource(r"    newLine: 'new\nline',"));
     });
   });
 
@@ -320,27 +340,27 @@ void main() {
     );
 
     test('calls each operation under its escaped wire name', () {
-      expect(output, contains(r'  Future<String> get$x() async {'));
-      expect(output, contains(r"_client.call('api.get\$x', "));
-      expect(output, contains('  Future<String> itS() async {'));
-      expect(output, contains(r"_client.call('api.it\'s', "));
-      expect(output, contains('  Future<String> getItem() async {'));
-      expect(output, contains("_client.call('api.get-item', "));
+      expect(output, containsSource(r'  Future<String> get$x() async {'));
+      expect(output, containsSource(r"_client.call('api.get\$x', "));
+      expect(output, containsSource('  Future<String> itS() async {'));
+      expect(output, containsSource(r"_client.call('api.it\'s', "));
+      expect(output, containsSource('  Future<String> getItem() async {'));
+      expect(output, containsSource("_client.call('api.get-item', "));
     });
 
     test('escapes a server URL and camel-cases its name', () {
       final servers = _decl(output, 'Servers');
       expect(
         servers,
-        contains(
+        containsSource(
           r"  static const String usEast = 'https://example.com/\$x/it\'s';",
         ),
       );
       expect(
         servers,
-        contains("  static const String dev = 'http://localhost:3000';"),
+        containsSource("  static const String dev = 'http://localhost:3000';"),
       );
-      expect(output, contains('baseUrl ?? Servers.usEast'));
+      expect(output, containsSource('baseUrl ?? Servers.usEast'));
     });
 
     test('keeps a newline in the title out of the header comment', () {
@@ -361,11 +381,11 @@ void main() {
     );
 
     test('stays a raw literal when it can', () {
-      expect(output, contains(r"RegExp(r'^[A-Z]{3}$').hasMatch(plain)"));
+      expect(output, containsSource(r"RegExp(r'^[A-Z]{3}$').hasMatch(plain)"));
     });
 
     test("is an escaped literal when it holds a `'`", () {
-      expect(output, contains(r"RegExp('^it\'s\\d\$').hasMatch(quoted)"));
+      expect(output, containsSource(r"RegExp('^it\'s\\d\$').hasMatch(quoted)"));
     });
   });
 
@@ -392,45 +412,45 @@ void main() {
 
     test('is a camel-cased field; the wire key is the original', () {
       final headers = _decl(output, 'Headers');
-      expect(headers, contains('  final String contentType\$;'));
-      expect(headers, contains('  final String contentType;'));
-      expect(headers, contains(r'  final String $1st;'));
+      expect(headers, containsSource('  final String contentType\$;'));
+      expect(headers, containsSource('  final String contentType;'));
+      expect(headers, containsSource(r'  final String $1st;'));
       expect(
         headers,
-        contains(r"      contentType$: json['content-type'] as String,"),
+        containsSource(r"      contentType$: json['content-type'] as String,"),
       );
-      expect(headers, contains(r"      'content-type': contentType$,"));
-      expect(headers, contains(r"      'contentType': contentType,"));
-      expect(headers, contains(r"      '1st': $1st,"));
+      expect(headers, containsSource(r"      'content-type': contentType$,"));
+      expect(headers, containsSource(r"      'contentType': contentType,"));
+      expect(headers, containsSource(r"      '1st': $1st,"));
     });
 
     test('names an inline type by its camel-cased field', () {
       final headers = _decl(output, 'Headers');
-      expect(headers, contains('  final HeadersMetaData metaData;'));
-      expect(output, contains('class HeadersMetaData {'));
-      expect(output, isNot(contains('Meta-data')));
+      expect(headers, containsSource('  final HeadersMetaData metaData;'));
+      expect(output, containsSource('class HeadersMetaData {'));
+      expect(output, isNot(containsSource('Meta-data')));
     });
 
     test('is a camel-cased parameter, sent in its slot', () {
       expect(
         output,
-        contains(
+        containsSource(
           '  Future<Headers> send({required String contentType, '
           'required String xYZ}) async {',
         ),
       );
-      expect(output, contains('      contentType,\n      xYZ,\n'));
+      expect(output, containsSource('      contentType,\n      xYZ,\n'));
     });
 
     test('a dotted namespace is a camel-cased field of a valid class', () {
       final blocks = _decl(output, 'Blocks');
-      expect(blocks, contains('  late final ABApi aB;'));
-      expect(blocks, contains('  late final ABCApi aBC;'));
-      expect(blocks, contains('    aB = ABApi(client);'));
-      expect(output, contains('class ABApi {'));
-      expect(output, contains("_client.call('a.b.ping', "));
-      expect(output, contains("_client.call('a.b.c.ping', "));
-      expect(output, isNot(contains('A.b')));
+      expect(blocks, containsSource('  late final ABApi aB;'));
+      expect(blocks, containsSource('  late final ABCApi aBC;'));
+      expect(blocks, containsSource('    aB = ABApi(client);'));
+      expect(output, containsSource('class ABApi {'));
+      expect(output, containsSource("_client.call('a.b.ping', "));
+      expect(output, containsSource("_client.call('a.b.c.ping', "));
+      expect(output, isNot(containsSource('A.b')));
     });
   });
 
@@ -441,12 +461,12 @@ void main() {
 
     test('each get their own field and class', () {
       final blocks = _decl(output, 'Blocks');
-      expect(blocks, contains('  late final ABApi aB;'));
-      expect(blocks, contains(r'  late final ABApi$ aB$;'));
-      expect(blocks, contains(r'  late final ABApi$$ aB$$;'));
-      expect(output, contains("_client.call('a.b.ping', "));
-      expect(output, contains("_client.call('aB.ping', "));
-      expect(output, contains("_client.call('a-b.ping', "));
+      expect(blocks, containsSource('  late final ABApi aB;'));
+      expect(blocks, containsSource(r'  late final ABApi$ aB$;'));
+      expect(blocks, containsSource(r'  late final ABApi$$ aB$$;'));
+      expect(output, containsSource("_client.call('a.b.ping', "));
+      expect(output, containsSource("_client.call('aB.ping', "));
+      expect(output, containsSource("_client.call('a-b.ping', "));
     });
   });
 
@@ -454,13 +474,13 @@ void main() {
     test('of a namespace starting with `_` is a public class', () {
       final output = _generate(methods: [_method('_x.ping'), _method('ping')]);
       final blocks = _decl(output, 'Blocks');
-      expect(blocks, contains(r'  late final $xApi $x;'));
-      expect(blocks, contains(r'    $x = $xApi(client);'));
-      expect(blocks, contains(r'  late final $defaultApi $default;'));
-      expect(blocks, contains(r'    $default = $defaultApi(client);'));
-      expect(output, contains(r'class $xApi {'));
-      expect(output, contains(r'class $defaultApi {'));
-      expect(output, isNot(contains('class _')));
+      expect(blocks, containsSource(r'  late final $xApi $x;'));
+      expect(blocks, containsSource(r'    $x = $xApi(client);'));
+      expect(blocks, containsSource(r'  late final $defaultApi $default;'));
+      expect(blocks, containsSource(r'    $default = $defaultApi(client);'));
+      expect(output, containsSource(r'class $xApi {'));
+      expect(output, containsSource(r'class $defaultApi {'));
+      expect(output, isNot(containsSource('class _')));
     });
 
     test('named after a core type does not shadow it', () {
@@ -481,44 +501,54 @@ void main() {
         },
       );
       final string = _decl(output, r'String$');
-      expect(string, contains(r'class String$ {'));
-      expect(string, contains('  final String value;'));
+      expect(string, containsSource(r'class String$ {'));
+      expect(string, containsSource('  final String value;'));
       expect(
         string,
-        contains(r'  factory String$.fromJson(Map<String, dynamic> json) {'),
+        containsSource(
+          r'  factory String$.fromJson(Map<String, dynamic> json) {',
+        ),
       );
       expect(
         string,
-        contains(r"  String toString() => 'String\$(value: $value, n: $n)';"),
+        containsSource(
+          r"  String toString() => 'String\$(value: $value, n: $n)';",
+        ),
       );
       final map = _decl(output, r'Map$');
-      expect(map, contains(r'  final List<String$> tags;'));
+      expect(map, containsSource(r'  final List<String$> tags;'));
       expect(
         map,
-        contains(
+        containsSource(
           r"      tags: (json['tags'] as List<dynamic>).map((e) => "
           r'String$.fromJson(e as Map<String, dynamic>)).toList(),',
         ),
       );
-      expect(map, contains(r'          blocksDeepEquals(tags, other.tags);'));
+      expect(
+        map,
+        containsSource(r'          blocksDeepEquals(tags, other.tags);'),
+      );
       final object = _decl(output, r'Object$');
-      expect(object, contains(r'  final Map$ m;'));
-      expect(object, contains('  Map<String, dynamic> toJson() {'));
-      expect(object, contains(r'  int get hashCode => Object.hash(m, name);'));
+      expect(object, containsSource(r'  final Map$ m;'));
+      expect(object, containsSource('  Map<String, dynamic> toJson() {'));
+      expect(
+        object,
+        containsSource(r'  int get hashCode => Object.hash(m, name);'),
+      );
       expect(
         output,
-        contains(
+        containsSource(
           r'  Future<Object$> save({required String$ s, required Map$ m}) async {',
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           r'    return Object$.fromJson(result as Map<String, dynamic>);',
         ),
       );
-      expect(output, isNot(contains('class String {')));
-      expect(output, isNot(contains('class Map {')));
+      expect(output, isNot(containsSource('class String {')));
+      expect(output, isNot(containsSource('class Map {')));
     });
 
     test('named `Blocks` or `Servers` leaves the facade alone', () {
@@ -531,11 +561,11 @@ void main() {
           {'name': 'prod', 'url': 'https://example.com'},
         ],
       );
-      expect(output, contains(r'class Blocks$ {'));
-      expect(output, contains(r'class Servers$ {'));
-      expect(output, contains('class Blocks {'));
-      expect(output, contains('class Servers {'));
-      expect(output, contains(r'  Future<Blocks$> get6() async {'));
+      expect(output, containsSource(r'class Blocks$ {'));
+      expect(output, containsSource(r'class Servers$ {'));
+      expect(output, containsSource('class Blocks {'));
+      expect(output, containsSource('class Servers {'));
+      expect(output, containsSource(r'  Future<Blocks$> get6() async {'));
     });
 
     test('equal to a namespace class keeps its name; the class yields', () {
@@ -545,10 +575,10 @@ void main() {
           'TodosApi': _object({'n': _string()}),
         },
       );
-      expect(output, contains('class TodosApi {\n  final String n;'));
-      expect(output, contains(r'class TodosApi$ {'));
-      expect(output, contains(r'  late final TodosApi$ todos;'));
-      expect(output, contains('  Future<TodosApi> list() async {'));
+      expect(output, containsSource('class TodosApi {\n  final String n;'));
+      expect(output, containsSource(r'class TodosApi$ {'));
+      expect(output, containsSource(r'  late final TodosApi$ todos;'));
+      expect(output, containsSource('  Future<TodosApi> list() async {'));
     });
 
     test('starting with `_`, or not an identifier, is escaped everywhere', () {
@@ -565,22 +595,26 @@ void main() {
           'my-doc': _object({'d': _ref('_Doc')}),
         },
       );
-      expect(output, contains(r'class $Doc {'));
-      expect(output, contains('class myDoc {'));
-      expect(output, contains(r'  final $Doc d;'));
+      expect(output, containsSource(r'class $Doc {'));
+      expect(output, containsSource('class myDoc {'));
+      expect(output, containsSource(r'  final $Doc d;'));
       expect(
         output,
-        contains(r"      d: $Doc.fromJson(json['d'] as Map<String, dynamic>),"),
+        containsSource(
+          r"      d: $Doc.fromJson(json['d'] as Map<String, dynamic>),",
+        ),
       );
       expect(
         output,
-        contains(r'  Future<myDoc> save({required $Doc d}) async {'),
+        containsSource(r'  Future<myDoc> save({required $Doc d}) async {'),
       );
       expect(
         output,
-        contains("    return myDoc.fromJson(result as Map<String, dynamic>);"),
+        containsSource(
+          "    return myDoc.fromJson(result as Map<String, dynamic>);",
+        ),
       );
-      expect(output, isNot(contains('_Doc')));
+      expect(output, isNot(containsSource('_Doc')));
     });
 
     test('of a union arm named after a non-identifier value is valid', () {
@@ -603,17 +637,17 @@ void main() {
           },
         },
       );
-      expect(output, contains('class InProgressTask extends Task {'));
-      expect(output, contains(r'class $doneTask extends Task {'));
+      expect(output, containsSource('class InProgressTask extends Task {'));
+      expect(output, containsSource(r'class $doneTask extends Task {'));
       expect(
         output,
-        contains(
+        containsSource(
           "      case 'in-progress': return InProgressTask.fromJson(json);",
         ),
       );
       expect(
         output,
-        contains(r"      case '_done': return $doneTask.fromJson(json);"),
+        containsSource(r"      case '_done': return $doneTask.fromJson(json);"),
       );
     });
 
@@ -627,9 +661,9 @@ void main() {
           'CONFIRM_SIGN_IN': _object({'n': _string(), 'm': _string()}),
         },
       );
-      expect(output, contains('class Doc {'));
-      expect(output, contains('class CONFIRM_SIGN_IN {'));
-      expect(output, contains('  late final Api api;'));
+      expect(output, containsSource('class Doc {'));
+      expect(output, containsSource('class CONFIRM_SIGN_IN {'));
+      expect(output, containsSource('  late final Api api;'));
     });
   });
 
@@ -663,23 +697,26 @@ void main() {
     );
 
     test('get distinct identifiers; the unchanged one keeps its name', () {
-      expect(output, contains('class myDoc {\n  final String n;'));
-      expect(output, contains('class myDoc\$ {\n  final String m;'));
-      expect(output, contains(r'class override$ {'));
-      expect(output, contains('  @override\n'));
+      expect(output, containsSource('class myDoc {\n  final String n;'));
+      expect(output, containsSource('class myDoc\$ {\n  final String m;'));
+      expect(output, containsSource(r'class override$ {'));
+      expect(output, containsSource('  @override\n'));
     });
 
     test('are renamed in every reference, at any depth', () {
       expect(
         output,
-        contains(
+        containsSource(
           r'required List<myDoc$> a, required Map<String, myDoc> b, '
           r'required override$? c',
         ),
       );
-      expect(output, contains(r'      a.map((e) => e.toJson()).toList(),'));
-      expect(output, contains(r'RealtimeChannel<myDoc$>'));
-      expect(output, contains(r'(json) => myDoc$.fromJson(json)'));
+      expect(
+        output,
+        containsSource(r'      a.map((e) => e.toJson()).toList(),'),
+      );
+      expect(output, containsSource(r'RealtimeChannel<myDoc$>'));
+      expect(output, containsSource(r'(json) => myDoc$.fromJson(json)'));
     });
   });
 
@@ -692,10 +729,10 @@ void main() {
 
     test('is escaped in the literal; the identifier is camel-cased', () {
       final doc = _decl(output, 'Doc');
-      expect(doc, contains(r"      aB: json['a\tb'] as String,"));
-      expect(doc, contains(r"      'c\u{1}d': cD,"));
-      expect(output, isNot(contains('\t')));
-      expect(output, isNot(contains('\u0001')));
+      expect(doc, containsSource(r"      aB: json['a\tb'] as String,"));
+      expect(doc, containsSource(r"      'c\u{1}d': cD,"));
+      expect(output, isNot(containsSource('\t')));
+      expect(output, isNot(containsSource('\u0001')));
     });
   });
 }

@@ -9,6 +9,8 @@ import 'package:blocks_codegen/src/model.dart';
 import 'package:blocks_codegen/src/parser.dart';
 import 'package:test/test.dart';
 
+import 'support/source_matchers.dart';
+
 // An open record is an object schema with `properties` and
 // `additionalProperties` (TS `T & Record<string, V>`). Its extra keys sit flat
 // beside its own keys on the wire. A model or an operation-scoped object kept
@@ -108,11 +110,11 @@ void main() {
     test('has an additionalProperties field, empty by default', () {
       expect(
         signUp,
-        contains('  final Map<String, String> additionalProperties;\n'),
+        containsSource('  final Map<String, String> additionalProperties;\n'),
       );
       expect(
         signUp,
-        contains(
+        containsSource(
           '    required this.password,\n'
           '    this.additionalProperties = const {},\n'
           '  });',
@@ -123,7 +125,7 @@ void main() {
     test('decodes every key but its own and the discriminator, flat', () {
       expect(
         signUp,
-        contains(
+        containsSource(
           '    const knownKeys = {\'action\', \'username\', \'password\'};\n'
           '    return SignUpInput(\n'
           "      username: json['username'] as String,\n"
@@ -140,7 +142,7 @@ void main() {
     test('encodes them flat; the discriminator and properties win', () {
       expect(
         signUp,
-        contains(
+        containsSource(
           "      'action': 'signUp',\n"
           "      'username': username,\n"
           "      'password': password,\n"
@@ -154,12 +156,15 @@ void main() {
     test('compares, hashes and prints them', () {
       expect(
         signUp,
-        contains(
+        containsSource(
           'blocksDeepEquals(additionalProperties, other.additionalProperties)',
         ),
       );
-      expect(signUp, contains('blocksDeepHash(additionalProperties)'));
-      expect(signUp, contains(r'additionalProperties: $additionalProperties'));
+      expect(signUp, containsSource('blocksDeepHash(additionalProperties)'));
+      expect(
+        signUp,
+        containsSource(r'additionalProperties: $additionalProperties'),
+      );
     });
 
     test('a closed variant of the same union is unchanged', () {
@@ -167,8 +172,8 @@ void main() {
         _method('setAuthState', params: [_param('input', _authInput)]),
       ]);
       final signIn = _classBody(output, 'SignInInput');
-      expect(signIn, isNot(contains('additionalProperties')));
-      expect(signIn, isNot(contains('knownKeys')));
+      expect(signIn, isNot(containsSource('additionalProperties')));
+      expect(signIn, isNot(containsSource('knownKeys')));
     });
 
     test('`additionalProperties: true` keeps any JSON value', () {
@@ -189,10 +194,10 @@ void main() {
       final label = _classBody(output, 'LabelInput');
       expect(
         label,
-        contains('  final Map<String, dynamic> additionalProperties;'),
+        containsSource('  final Map<String, dynamic> additionalProperties;'),
       );
-      expect(label, contains('.map((e) => MapEntry(e.key, e.value)),'));
-      expect(label, contains("contains(e.key)) e.key: e.value,"));
+      expect(label, containsSource('.map((e) => MapEntry(e.key, e.value)),'));
+      expect(label, containsSource("contains(e.key)) e.key: e.value,"));
     });
 
     test('a variant with no properties but extras takes them in its ctor', () {
@@ -213,16 +218,16 @@ void main() {
       final label = _classBody(output, 'LabelInput');
       expect(
         label,
-        contains(
+        containsSource(
           '  const LabelInput({\n'
           '    this.additionalProperties = const {},\n'
           '  });',
         ),
       );
-      expect(label, contains("    const knownKeys = {'action'};"));
+      expect(label, containsSource("    const knownKeys = {'action'};"));
       expect(
         _classBody(output, 'ClearInput'),
-        contains('  const ClearInput();'),
+        containsSource('  const ClearInput();'),
       );
     });
 
@@ -244,16 +249,19 @@ void main() {
       final notes = _classBody(output, 'NotesInput');
       expect(
         notes,
-        contains('  final Map<String, Note> additionalProperties;'),
+        containsSource('  final Map<String, Note> additionalProperties;'),
       );
       expect(
         notes,
-        contains(
+        containsSource(
           '.map((e) => MapEntry(e.key, '
           'Note.fromJson(e.value as Map<String, dynamic>))),',
         ),
       );
-      expect(notes, contains('.contains(e.key)) e.key: e.value.toJson(),'));
+      expect(
+        notes,
+        containsSource('.contains(e.key)) e.key: e.value.toJson(),'),
+      );
     });
 
     test('extras holding an OIDC client take the calling client', () {
@@ -269,23 +277,23 @@ void main() {
       final listed = _classBody(output, 'ListedProvidersResult');
       expect(
         listed,
-        contains('  final Map<String, OidcClient> additionalProperties;'),
+        containsSource('  final Map<String, OidcClient> additionalProperties;'),
       );
       expect(
         listed,
-        contains(
+        containsSource(
           'factory ListedProvidersResult.fromJson('
           'Map<String, dynamic> json, BlocksClient client)',
         ),
       );
       expect(
         listed,
-        contains(
+        containsSource(
           'OidcClient.fromJson(e.value as Map<String, dynamic>, '
           'baseUrl: client.baseUrl',
         ),
       );
-      expect(output, contains('show OidcClient,'));
+      expect(output, containsSource('show OidcClient,'));
     });
   });
 
@@ -335,7 +343,7 @@ void main() {
       final arm = _classBody(output, 'ConfirmSignInInput');
       expect(
         arm,
-        contains(
+        containsSource(
           "const knownKeys = {'action', 'session', 'challenge', 'code', "
           "'mfaType'};",
         ),
@@ -346,11 +354,11 @@ void main() {
       final code = _classBody(output, 'CodeConfirmSignInInputChallenge');
       expect(
         code,
-        contains('  final Map<String, String> additionalProperties;'),
+        containsSource('  final Map<String, String> additionalProperties;'),
       );
       expect(
         code,
-        contains(
+        containsSource(
           "const knownKeys = {'challenge', 'code', 'action', 'session'};",
         ),
       );
@@ -373,15 +381,15 @@ void main() {
       ]);
       expect(
         output,
-        contains('Future<bool> first({required ApiFirstInput input})'),
+        containsSource('Future<bool> first({required ApiFirstInput input})'),
       );
       expect(
         output,
-        contains('Future<bool> second({required ApiSecondInput input})'),
+        containsSource('Future<bool> second({required ApiSecondInput input})'),
       );
       expect(
         _classBody(output, 'SignUpInput'),
-        contains('additionalProperties'),
+        containsSource('additionalProperties'),
       );
     });
 
@@ -396,7 +404,7 @@ void main() {
       ]);
       expect(
         output,
-        contains('Future<bool> second({required ApiFirstInput input})'),
+        containsSource('Future<bool> second({required ApiFirstInput input})'),
       );
     });
 
@@ -422,11 +430,14 @@ void main() {
           },
         ),
       ]);
-      expect(output, contains('Future<LoadResult> load()'));
-      expect(_classBody(output, 'LoadResult'), isNot(contains('additional')));
+      expect(output, containsSource('Future<LoadResult> load()'));
+      expect(
+        _classBody(output, 'LoadResult'),
+        isNot(containsSource('additional')),
+      );
       expect(
         _classBody(output, 'ApiSaveProfile'),
-        contains('additionalProperties'),
+        containsSource('additionalProperties'),
       );
     });
   });
@@ -447,7 +458,7 @@ void main() {
     ]);
     expect(
       _classBody(output, 'ApiSaveProfile'),
-      contains(
+      containsSource(
         "      'name': name,\n"
         '      for (final e in additionalProperties.entries)\n'
         "        if (!const {'name'}.contains(e.key)) e.key: e.value,\n"

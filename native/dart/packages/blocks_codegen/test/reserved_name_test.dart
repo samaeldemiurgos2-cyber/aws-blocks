@@ -8,6 +8,8 @@ import 'package:blocks_codegen/src/generator.dart';
 import 'package:blocks_codegen/src/parser.dart';
 import 'package:test/test.dart';
 
+import 'support/source_matchers.dart';
+
 // A name from the spec becomes a Dart identifier: a field, a named parameter,
 // a method, a `Blocks` field, an enum value or a `Servers` constant. Some
 // names can't be used as they are:
@@ -123,39 +125,45 @@ void main() {
 
     test('is a public field: the `_` becomes `\$`', () {
       final doc = _decl(output, 'Doc');
-      expect(doc, contains(r'  final String $id;'));
-      expect(doc, contains(r'  final int? $$v;'));
-      expect(doc, contains(r'    required this.$id,'));
-      expect(doc, contains(r'    this.$$v,'));
-      expect(doc, isNot(contains('this._')));
+      expect(doc, containsSource(r'  final String $id;'));
+      expect(doc, containsSource(r'  final int? $$v;'));
+      expect(doc, containsSource(r'    required this.$id,'));
+      expect(doc, containsSource(r'    this.$$v,'));
+      expect(doc, isNot(containsSource('this._')));
     });
 
     test('keeps its wire name', () {
       final doc = _decl(output, 'Doc');
-      expect(doc, contains(r"      $id: json['_id'] as String,"));
-      expect(doc, contains(r"      $$v: (json['__v'] as num?)?.toInt(),"));
-      expect(doc, contains(r"      '_id': $id,"));
-      expect(doc, contains(r"      if ($$v != null) '__v': $$v,"));
+      expect(doc, containsSource(r"      $id: json['_id'] as String,"));
+      expect(
+        doc,
+        containsSource(r"      $$v: (json['__v'] as num?)?.toInt(),"),
+      );
+      expect(doc, containsSource(r"      '_id': $id,"));
+      expect(doc, containsSource(r"      if ($$v != null) '__v': $$v,"));
     });
 
     test('is checked, compared, hashed and printed by its identifier', () {
       final doc = _decl(output, 'Doc');
       expect(
         doc,
-        contains(
+        containsSource(
           r"    if (!($id.length >= 1)) throw ArgumentError('\$id must be at "
           "least 1 characters');",
         ),
       );
-      expect(doc, contains(r'          $id == other.$id &&'));
-      expect(doc, contains(r'Object.hash($id, $$v, name)'));
-      expect(doc, contains(r"'Doc(\$id: ${$id}, \$\$v: ${$$v}, name: $name)'"));
+      expect(doc, containsSource(r'          $id == other.$id &&'));
+      expect(doc, containsSource(r'Object.hash($id, $$v, name)'));
+      expect(
+        doc,
+        containsSource(r"'Doc(\$id: ${$id}, \$\$v: ${$$v}, name: $name)'"),
+      );
     });
 
     test('is a named parameter, sent in its slot', () {
       expect(
         output,
-        contains(
+        containsSource(
           r'  Future<Doc> save({required String $id, required int $$v, '
           'required String name}) async {',
         ),
@@ -163,7 +171,7 @@ void main() {
       // Params are positional, so the wire name isn't sent.
       expect(
         output,
-        contains(
+        containsSource(
           r'      $id,'
           '\n'
           r'      $$v,'
@@ -173,25 +181,25 @@ void main() {
     });
 
     test('is a public method that calls the original operation', () {
-      expect(output, contains(r'  Future<String> $hidden() async {'));
-      expect(output, contains("_client.call('api._hidden', "));
+      expect(output, containsSource(r'  Future<String> $hidden() async {'));
+      expect(output, containsSource("_client.call('api._hidden', "));
     });
 
     test('is a public `Blocks` field, including the dotless `_default`', () {
       final blocks = _decl(output, 'Blocks');
-      expect(blocks, contains(r'  late final $internalApi $internal;'));
-      expect(blocks, contains(r'    $internal = $internalApi(client);'));
-      expect(blocks, contains(r'  late final $defaultApi $default;'));
-      expect(blocks, contains(r'    $default = $defaultApi(client);'));
+      expect(blocks, containsSource(r'  late final $internalApi $internal;'));
+      expect(blocks, containsSource(r'    $internal = $internalApi(client);'));
+      expect(blocks, containsSource(r'  late final $defaultApi $default;'));
+      expect(blocks, containsSource(r'    $default = $defaultApi(client);'));
     });
 
     test('is a public enum value, including a sanitized `1st`', () {
       final level = _decl(output, 'Level');
-      expect(level, contains('  \$hidden,\n  \$1st,\n  ok\n;'));
-      expect(level, contains(r"    '_hidden': $hidden,"));
-      expect(level, contains(r"    '1st': $1st,"));
-      expect(level, contains(r"    $hidden: '_hidden',"));
-      expect(level, contains('  String toJson() => _toJsonMap[this]!;'));
+      expect(level, containsSource('  \$hidden,\n  \$1st,\n  ok\n;'));
+      expect(level, containsSource(r"    '_hidden': $hidden,"));
+      expect(level, containsSource(r"    '1st': $1st,"));
+      expect(level, containsSource(r"    $hidden: '_hidden',"));
+      expect(level, containsSource('  String toJson() => _toJsonMap[this]!;'));
     });
   });
 
@@ -241,44 +249,50 @@ void main() {
     test('is escaped with a trailing `\$` and keeps its wire name', () {
       final doc = _decl(output, 'Doc');
       for (final m in members) {
-        expect(doc, contains('  final String $m\$;'));
-        expect(doc, contains('    required this.$m\$,'));
-        expect(doc, contains("      $m\$: json['$m'] as String,"));
-        expect(doc, contains("      '$m': $m\$,"));
+        expect(doc, containsSource('  final String $m\$;'));
+        expect(doc, containsSource('    required this.$m\$,'));
+        expect(doc, containsSource("      $m\$: json['$m'] as String,"));
+        expect(doc, containsSource("      '$m': $m\$,"));
       }
       // The generated members themselves are untouched.
-      expect(doc, contains('  factory Doc.fromJson(Map<String, dynamic> json'));
-      expect(doc, contains('  Map<String, dynamic> toJson() {'));
-      expect(doc, contains('  int get hashCode => Object.hash('));
-      expect(doc, contains('  String toString() => '));
-      expect(doc, contains(r"'Doc(toJson\$: ${toJson$}, "));
+      expect(
+        doc,
+        containsSource('  factory Doc.fromJson(Map<String, dynamic> json'),
+      );
+      expect(doc, containsSource('  Map<String, dynamic> toJson() {'));
+      expect(doc, containsSource('  int get hashCode => Object.hash('));
+      expect(doc, containsSource('  String toString() => '));
+      expect(doc, containsSource(r"'Doc(toJson\$: ${toJson$}, "));
     });
 
     test('`additionalProperties` is escaped only in an open record', () {
       final open = _decl(output, 'Open');
-      expect(open, contains(r'  final String additionalProperties$;'));
-      expect(open, contains('  final Map<String, int> additionalProperties;'));
-      expect(open, contains(r'    required this.additionalProperties$,'));
-      expect(open, contains('    this.additionalProperties = const {},'));
+      expect(open, containsSource(r'  final String additionalProperties$;'));
       expect(
         open,
-        contains("    const knownKeys = {'additionalProperties', 'id'};"),
+        containsSource('  final Map<String, int> additionalProperties;'),
+      );
+      expect(open, containsSource(r'    required this.additionalProperties$,'));
+      expect(open, containsSource('    this.additionalProperties = const {},'));
+      expect(
+        open,
+        containsSource("    const knownKeys = {'additionalProperties', 'id'};"),
       );
       expect(
         open,
-        contains(
+        containsSource(
           r"      additionalProperties$: json['additionalProperties'] as String,",
         ),
       );
       expect(
         open,
-        contains(r"      'additionalProperties': additionalProperties$,"),
+        containsSource(r"      'additionalProperties': additionalProperties$,"),
       );
       // The map's own `additionalProperties` key is the typed field's, so an
       // extra of that name isn't sent.
       expect(
         open,
-        contains(
+        containsSource(
           '      for (final e in additionalProperties.entries)\n'
           "        if (!const {'additionalProperties', 'id'}.contains(e.key)) "
           'e.key: e.value,',
@@ -286,27 +300,33 @@ void main() {
       );
       expect(
         open,
-        contains(
+        containsSource(
           r'Object.hash(additionalProperties$, id, '
           'blocksDeepHash(additionalProperties))',
         ),
       );
 
       final closed = _decl(output, 'Closed');
-      expect(closed, contains('  final String additionalProperties;'));
-      expect(closed, isNot(contains(r'additionalProperties$')));
+      expect(closed, containsSource('  final String additionalProperties;'));
+      expect(closed, isNot(containsSource(r'additionalProperties$')));
     });
 
     test('in a union variant is escaped too', () {
       final circle = _decl(output, 'CircleShape');
-      expect(circle, contains(r'  final String toJson$;'));
-      expect(circle, contains(r'  final int hashCode$;'));
-      expect(circle, contains(r"      toJson$: json['toJson'] as String,"));
-      expect(circle, contains(r"      'toJson': toJson$,"));
-      expect(circle, contains("      'kind': 'circle',"));
+      expect(circle, containsSource(r'  final String toJson$;'));
+      expect(circle, containsSource(r'  final int hashCode$;'));
+      expect(
+        circle,
+        containsSource(r"      toJson$: json['toJson'] as String,"),
+      );
+      expect(circle, containsSource(r"      'toJson': toJson$,"));
+      expect(circle, containsSource("      'kind': 'circle',"));
       final square = _decl(output, 'SquareShape');
-      expect(square, contains(r'  final String? toString$;'));
-      expect(square, contains(r"      if (toString$ != null) 'toString': "));
+      expect(square, containsSource(r'  final String? toString$;'));
+      expect(
+        square,
+        containsSource(r"      if (toString$ != null) 'toString': "),
+      );
     });
   });
 
@@ -323,28 +343,31 @@ void main() {
       final level = _decl(output, 'LevelKnown');
       expect(
         level,
-        contains(
+        containsSource(
           '  values\$,\n  index\$,\n  name\$,\n  toJson\$,\n  hashCode\$,\n'
           '  ok\n;',
         ),
       );
-      expect(level, contains(r"    'values': values$,"));
-      expect(level, contains(r"    'name': name$,"));
-      expect(level, contains(r"    index$: 'index',"));
-      expect(level, contains('    ok: \'ok\','));
+      expect(level, containsSource(r"    'values': values$,"));
+      expect(level, containsSource(r"    'name': name$,"));
+      expect(level, containsSource(r"    index$: 'index',"));
+      expect(level, containsSource('    ok: \'ok\','));
       // `values.byName` and `name` would now name the user's values; the
       // escaped values go through the maps instead. `Level` is a result, so
       // it is open: the maps are on `LevelKnown`, and `Level.fromJson` falls
       // back to `LevelUnknown`.
-      expect(level, contains('  String toJson() => _toJsonMap[this]!;'));
+      expect(level, containsSource('  String toJson() => _toJsonMap[this]!;'));
       expect(
         output,
-        contains(
+        containsSource(
           '  static Level fromJson(String json) => '
           'LevelKnown._jsonMap[json] ?? LevelUnknown(json);',
         ),
       );
-      expect(output, contains(r'  static const values$ = LevelKnown.values$;'));
+      expect(
+        output,
+        containsSource(r'  static const values$ = LevelKnown.values$;'),
+      );
     });
 
     test('a keyword value is escaped too (it used to break the enum)', () {
@@ -359,8 +382,8 @@ void main() {
         ),
         'LevelKnown',
       );
-      expect(level, contains('  class\$,\n  low\n;'));
-      expect(level, contains(r"    'class': class$,"));
+      expect(level, containsSource('  class\$,\n  low\n;'));
+      expect(level, containsSource(r"    'class': class$,"));
     });
 
     test('two values that sanitize alike get distinct identifiers', () {
@@ -375,9 +398,9 @@ void main() {
         ),
         'LevelKnown',
       );
-      expect(level, contains('  aB\$,\n  aB\n;'));
-      expect(level, contains(r"    'a-b': aB$,"));
-      expect(level, contains("    'aB': aB,"));
+      expect(level, containsSource('  aB\$,\n  aB\n;'));
+      expect(level, containsSource(r"    'a-b': aB$,"));
+      expect(level, containsSource("    'aB': aB,"));
     });
   });
 
@@ -418,32 +441,35 @@ void main() {
 
     test('as a field is escaped, and the type stays reachable', () {
       final doc = _decl(output, 'Doc');
-      expect(doc, contains(r'  final int int$;'));
-      expect(doc, contains(r'  final String String$;'));
-      expect(doc, contains(r'  final bool bool$;'));
-      expect(doc, contains(r'  final List<String> List$;'));
-      expect(doc, contains(r'  final Map<String, int> Map$;'));
-      expect(doc, contains(r'  final String Object$;'));
-      expect(doc, contains(r'  final String override$;'));
-      expect(doc, contains(r'  final String identical$;'));
-      expect(doc, contains(r'  final String Doc$;'));
-      expect(doc, contains(r'  final Level Level$;'));
-      expect(doc, contains(r"      int$: (json['int'] as num).toInt(),"));
-      expect(doc, contains(r"      Level$: Level.fromJson(json['Level'] "));
-      expect(doc, contains(r"      'Level': Level$.toJson(),"));
+      expect(doc, containsSource(r'  final int int$;'));
+      expect(doc, containsSource(r'  final String String$;'));
+      expect(doc, containsSource(r'  final bool bool$;'));
+      expect(doc, containsSource(r'  final List<String> List$;'));
+      expect(doc, containsSource(r'  final Map<String, int> Map$;'));
+      expect(doc, containsSource(r'  final String Object$;'));
+      expect(doc, containsSource(r'  final String override$;'));
+      expect(doc, containsSource(r'  final String identical$;'));
+      expect(doc, containsSource(r'  final String Doc$;'));
+      expect(doc, containsSource(r'  final Level Level$;'));
+      expect(doc, containsSource(r"      int$: (json['int'] as num).toInt(),"));
+      expect(
+        doc,
+        containsSource(r"      Level$: Level.fromJson(json['Level'] "),
+      );
+      expect(doc, containsSource(r"      'Level': Level$.toJson(),"));
     });
 
     test('as a parameter is escaped and sent in its slot', () {
       expect(
         output,
-        contains(
+        containsSource(
           r'  Future<Doc> save({required String String$, required int int$, '
           r'required Map<String, String> Map$, required Doc Doc$}) async {',
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           r'      String$,'
           '\n'
           r'      int$,'
@@ -457,14 +483,14 @@ void main() {
     });
 
     test('as a method is escaped', () {
-      expect(output, contains(r'  Future<Doc> Doc$() async {'));
-      expect(output, contains("_client.call('api.Doc', "));
+      expect(output, containsSource(r'  Future<Doc> Doc$() async {'));
+      expect(output, containsSource("_client.call('api.Doc', "));
     });
 
     test('as an enum value is escaped', () {
       final level = _decl(output, 'LevelKnown');
-      expect(level, contains('  String\$,\n  Level\$,\n  low\n;'));
-      expect(level, contains(r"    'String': String$,"));
+      expect(level, containsSource('  String\$,\n  Level\$,\n  low\n;'));
+      expect(level, containsSource(r"    'String': String$,"));
     });
   });
 
@@ -485,37 +511,45 @@ void main() {
     );
 
     test('an operation named after an `Object` member is escaped', () {
-      expect(output, contains(r'  Future<String> toString$() async {'));
-      expect(output, contains("_client.call('api.toString', "));
-      expect(output, contains(r'  Future<String> hashCode$() async {'));
-      expect(output, contains('  Future<String> name() async {'));
+      expect(output, containsSource(r'  Future<String> toString$() async {'));
+      expect(output, containsSource("_client.call('api.toString', "));
+      expect(output, containsSource(r'  Future<String> hashCode$() async {'));
+      expect(output, containsSource('  Future<String> name() async {'));
     });
 
     test('a namespace named after an `Object` member is escaped', () {
       final blocks = _decl(output, 'Blocks');
-      expect(blocks, contains(r'  late final RuntimeTypeApi runtimeType$;'));
-      expect(blocks, contains(r'  late final ToStringApi toString$;'));
-      expect(blocks, contains(r'    runtimeType$ = RuntimeTypeApi(client);'));
-      expect(blocks, contains('  late final Api api;'));
+      expect(
+        blocks,
+        containsSource(r'  late final RuntimeTypeApi runtimeType$;'),
+      );
+      expect(blocks, containsSource(r'  late final ToStringApi toString$;'));
+      expect(
+        blocks,
+        containsSource(r'    runtimeType$ = RuntimeTypeApi(client);'),
+      );
+      expect(blocks, containsSource('  late final Api api;'));
     });
 
     test('a namespace named `close` is escaped, so close() stays', () {
       final blocks = _decl(output, 'Blocks');
-      expect(blocks, contains(r'  late final CloseApi close$;'));
-      expect(blocks, contains('  void close() => _client.close();'));
+      expect(blocks, containsSource(r'  late final CloseApi close$;'));
+      expect(blocks, containsSource('  void close() => _client.close();'));
     });
 
     test('a server name is escaped, and the default reads it', () {
       final servers = _decl(output, 'Servers');
       expect(
         servers,
-        contains(r"  static const String toString$ = 'https://a.example';"),
+        containsSource(
+          r"  static const String toString$ = 'https://a.example';",
+        ),
       );
       expect(
         servers,
-        contains(r"  static const String $local = 'http://localhost';"),
+        containsSource(r"  static const String $local = 'http://localhost';"),
       );
-      expect(output, contains(r'baseUrl ?? Servers.toString$'));
+      expect(output, containsSource(r'baseUrl ?? Servers.toString$'));
     });
   });
 
@@ -531,7 +565,7 @@ void main() {
       );
       expect(
         output,
-        contains(
+        containsSource(
           '  Future<String> run({required String toJson, '
           'required String hashCode}) async {',
         ),
@@ -553,12 +587,12 @@ void main() {
         ),
         'Doc',
       );
-      expect(doc, contains('  final String values;'));
-      expect(doc, contains('  final int index;'));
-      expect(doc, contains('  final String name;'));
-      expect(doc, contains('  final String id_;'));
-      expect(doc, contains('  final String a_b;'));
-      expect(doc, isNot(contains(r'$;')));
+      expect(doc, containsSource('  final String values;'));
+      expect(doc, containsSource('  final int index;'));
+      expect(doc, containsSource('  final String name;'));
+      expect(doc, containsSource('  final String id_;'));
+      expect(doc, containsSource('  final String a_b;'));
+      expect(doc, isNot(containsSource(r'$;')));
     });
 
     test('a keyword is still escaped as before', () {
@@ -570,8 +604,8 @@ void main() {
         ),
         'Doc',
       );
-      expect(doc, contains(r'  final String class$;'));
-      expect(doc, contains('  final String type;'));
+      expect(doc, containsSource(r'  final String class$;'));
+      expect(doc, containsSource('  final String type;'));
     });
   });
 
@@ -584,21 +618,24 @@ void main() {
       );
       expect(
         output,
-        contains(
+        containsSource(
           r'  Future<String> run({required String result, '
           r'required int $result}) async {',
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           '      result,\n'
           r'      $result,'
           '\n',
         ),
       );
-      expect(output, contains(r'    final $result2 = await _client.call('));
-      expect(output, contains(r'    return $result2 as String;'));
+      expect(
+        output,
+        containsSource(r'    final $result2 = await _client.call('),
+      );
+      expect(output, containsSource(r'    return $result2 as String;'));
     });
 
     test('`_result` alone leaves the local `result`', () {
@@ -607,8 +644,8 @@ void main() {
           _method('api.run', params: {'_result': _int()}),
         ],
       );
-      expect(output, contains(r'run({required int $result})'));
-      expect(output, contains('    final result = await _client.call('));
+      expect(output, containsSource(r'run({required int $result})'));
+      expect(output, containsSource('    final result = await _client.call('));
     });
 
     test('a field `_other` does not make `==` rename `other`', () {
@@ -620,10 +657,10 @@ void main() {
         ),
         'Doc',
       );
-      expect(doc, contains(r'  final String $other;'));
-      expect(doc, contains(r'  bool operator ==(Object $other2) =>'));
-      expect(doc, contains(r'          $other == $other2.$other &&'));
-      expect(doc, contains(r'          other == $other2.other;'));
+      expect(doc, containsSource(r'  final String $other;'));
+      expect(doc, containsSource(r'  bool operator ==(Object $other2) =>'));
+      expect(doc, containsSource(r'          $other == $other2.$other &&'));
+      expect(doc, containsSource(r'          other == $other2.other;'));
     });
   });
 }

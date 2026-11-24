@@ -1,3 +1,13 @@
+## Unreleased
+
+- Generated clients are formatted with `dart_style`, the formatter
+  `dart format` runs, so running a `dart format` from the same `dart_style`
+  release after generating no longer changes them. The CLI formats for the
+  language version of the package it writes into, or the one given with
+  `--language-version`, and the builder for the package it builds. A language
+  version older than 3.0, which generated clients can't compile at, is an
+  error.
+
 ## 1.0.0
 
 ### Breaking

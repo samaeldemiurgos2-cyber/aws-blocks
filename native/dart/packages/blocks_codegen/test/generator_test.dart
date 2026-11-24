@@ -9,6 +9,8 @@ import 'package:blocks_codegen/src/generator.dart';
 import 'package:blocks_codegen/src/parser.dart';
 import 'package:test/test.dart';
 
+import 'support/source_matchers.dart';
+
 void main() {
   const gen = DartCodeGenerator();
 
@@ -40,10 +42,10 @@ void main() {
           types: {},
         ),
       );
-      expect(output, contains('class Blocks {'));
-      expect(output, contains('late final Api api;'));
-      expect(output, contains("Blocks({required String baseUrl"));
-      expect(output, contains("_client.call('api.greet'"));
+      expect(output, containsSource('class Blocks {'));
+      expect(output, containsSource('late final Api api;'));
+      expect(output, containsSource("Blocks({required String baseUrl"));
+      expect(output, containsSource("_client.call('api.greet'"));
     });
   });
 
@@ -80,11 +82,11 @@ void main() {
           },
         ),
       );
-      expect(output, contains('sealed class Input {'));
-      expect(output, contains("case 'a': return AInput.fromJson(json);"));
-      expect(output, contains("case 'b': return BInput.fromJson(json);"));
-      expect(output, contains('class AInput extends Input {'));
-      expect(output, contains("'action': 'a',"));
+      expect(output, containsSource('sealed class Input {'));
+      expect(output, containsSource("case 'a': return AInput.fromJson(json);"));
+      expect(output, containsSource("case 'b': return BInput.fromJson(json);"));
+      expect(output, containsSource('class AInput extends Input {'));
+      expect(output, containsSource("'action': 'a',"));
     });
   });
 
@@ -99,7 +101,9 @@ void main() {
     );
     expect(
       output,
-      contains('// Requires blocks_runtime $minimumRuntimeVersion or later.\n'),
+      containsSource(
+        '// Requires blocks_runtime $minimumRuntimeVersion or later.\n',
+      ),
     );
   });
 
@@ -179,12 +183,15 @@ void main() {
           types: {},
         ),
       );
-      expect(output, contains('Future<RealtimeChannel<dynamic>> getChannel()'));
+      expect(
+        output,
+        containsSource('Future<RealtimeChannel<dynamic>> getChannel()'),
+      );
       // An `unknown` message can be any JSON value, so the raw payload is
       // passed through (this used to emit `dynamic.fromJson(json)`).
       expect(
         output,
-        contains(
+        containsSource(
           'RealtimeChannel.fromJsonValue(result as Map<String, dynamic>, (payload) => payload)',
         ),
       );
@@ -213,11 +220,14 @@ void main() {
           types: {},
         ),
       );
-      expect(output, contains('Future<RealtimeChannel<dynamic>> getChannel()'));
+      expect(
+        output,
+        containsSource('Future<RealtimeChannel<dynamic>> getChannel()'),
+      );
       // The map-typed `fromJson` would throw on a non-object message.
       expect(
         output,
-        contains(
+        containsSource(
           'RealtimeChannel.fromJsonValue(result as Map<String, dynamic>, (payload) => payload)',
         ),
       );
@@ -246,10 +256,12 @@ void main() {
           types: {},
         ),
       );
-      expect(output, contains('Future<FileDownloadHandle> download()'));
+      expect(output, containsSource('Future<FileDownloadHandle> download()'));
       expect(
         output,
-        contains('FileDownloadHandle.fromJson(result as Map<String, dynamic>)'),
+        containsSource(
+          'FileDownloadHandle.fromJson(result as Map<String, dynamic>)',
+        ),
       );
     });
 
@@ -283,11 +295,11 @@ void main() {
         );
         expect(
           output,
-          contains('Future<RealtimeChannel<dynamic>?> maybeChannel()'),
+          containsSource('Future<RealtimeChannel<dynamic>?> maybeChannel()'),
         );
         expect(
           output,
-          contains(
+          containsSource(
             'result == null ? null : RealtimeChannel.fromJsonValue(result as Map<String, dynamic>, (payload) => payload)',
           ),
         );
@@ -317,10 +329,10 @@ void main() {
           types: {},
         ),
       );
-      expect(output, contains('Future<FileDownloadHandle?> maybeFile()'));
+      expect(output, containsSource('Future<FileDownloadHandle?> maybeFile()'));
       expect(
         output,
-        contains(
+        containsSource(
           'result == null ? null : FileDownloadHandle.fromJson(result as Map<String, dynamic>)',
         ),
       );
@@ -364,11 +376,14 @@ void main() {
           },
         }),
       );
-      expect(output, contains('class Telemetry'));
-      expect(output, contains('Future<RealtimeChannel<Telemetry>?> op()'));
+      expect(output, containsSource('class Telemetry'));
       expect(
         output,
-        contains(
+        containsSource('Future<RealtimeChannel<Telemetry>?> op()'),
+      );
+      expect(
+        output,
+        containsSource(
           'result == null ? null : RealtimeChannel.fromJson(result as Map<String, dynamic>, (json) => Telemetry.fromJson(json))',
         ),
       );
@@ -412,12 +427,12 @@ void main() {
           },
         }),
       );
-      expect(output, contains('Future<RealtimeChannel<Msg?>> ch()'));
+      expect(output, containsSource('Future<RealtimeChannel<Msg?>> ch()'));
       // A `Msg?` message can be null, so each payload decodes through
       // `fromJsonValue` with a null guard rather than the map-typed `fromJson`.
       expect(
         output,
-        contains(
+        containsSource(
           'return RealtimeChannel.fromJsonValue(result as Map<String, dynamic>, (payload) => payload == null ? null : Msg.fromJson(payload as Map<String, dynamic>))',
         ),
       );
@@ -459,17 +474,17 @@ void main() {
           ],
         }),
       );
-      expect(output, isNot(contains('dynamic.fromJson')));
+      expect(output, isNot(containsSource('dynamic.fromJson')));
       // An `unknown` message is handed over as is, whatever JSON it is.
       expect(
         output,
-        contains(
+        containsSource(
           'result == null ? null : RealtimeChannel.fromJsonValue(result as Map<String, dynamic>, (payload) => payload)',
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           'return RealtimeChannel.fromJsonValue(result as Map<String, dynamic>, (payload) => payload)',
         ),
       );
@@ -522,23 +537,26 @@ void main() {
       // never returned as the raw descriptor.
       expect(
         output,
-        contains('Future<RealtimeChannel<String>?> nullableStr()'),
+        containsSource('Future<RealtimeChannel<String>?> nullableStr()'),
       );
-      expect(output, contains('Future<RealtimeChannel<String>> directStr()'));
       expect(
         output,
-        contains(
+        containsSource('Future<RealtimeChannel<String>> directStr()'),
+      );
+      expect(
+        output,
+        containsSource(
           'return result == null ? null : RealtimeChannel.fromJsonValue(result as Map<String, dynamic>, (payload) => payload as String)',
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           'return RealtimeChannel.fromJsonValue(result as Map<String, dynamic>, (payload) => payload as String)',
         ),
       );
-      expect(output, isNot(contains('result == null ? null : result')));
-      expect(output, isNot(contains('return result;')));
+      expect(output, isNot(containsSource('result == null ? null : result')));
+      expect(output, isNot(containsSource('return result;')));
     });
 
     test('a sealed-union channel message type hydrates via fromJson', () {
@@ -594,11 +612,11 @@ void main() {
         }),
       );
       // The sealed union is a decodable object, so the channel hydrates it.
-      expect(output, contains('sealed class Event'));
-      expect(output, contains('Future<RealtimeChannel<Event>> events()'));
+      expect(output, containsSource('sealed class Event'));
+      expect(output, containsSource('Future<RealtimeChannel<Event>> events()'));
       expect(
         output,
-        contains(
+        containsSource(
           'return RealtimeChannel.fromJson(result as Map<String, dynamic>, (json) => Event.fromJson(json))',
         ),
       );
@@ -631,11 +649,11 @@ void main() {
       );
       expect(
         output,
-        contains('Future<RealtimeChannel<Map<String, num>>> metrics()'),
+        containsSource('Future<RealtimeChannel<Map<String, num>>> metrics()'),
       );
       expect(
         output,
-        contains(
+        containsSource(
           'return RealtimeChannel.fromJsonValue(result as Map<String, dynamic>, (payload) => (payload as Map<String, dynamic>).map((k1, v1) => MapEntry(k1, v1 as num)))',
         ),
       );
@@ -670,11 +688,11 @@ void main() {
           ],
         }),
       );
-      expect(output, isNot(contains('.fromJson(json)')));
-      expect(output, contains('Future<RealtimeChannel<dynamic>> dynQ()'));
+      expect(output, isNot(containsSource('.fromJson(json)')));
+      expect(output, containsSource('Future<RealtimeChannel<dynamic>> dynQ()'));
       expect(
         output,
-        contains(
+        containsSource(
           'return RealtimeChannel.fromJsonValue(result as Map<String, dynamic>, (payload) => payload as dynamic)',
         ),
       );
@@ -708,7 +726,7 @@ void main() {
       expect(model.warnings, isEmpty);
       expect(
         _generateModel(model),
-        contains(
+        containsSource(
           'return RealtimeChannel.fromJsonValue(result as Map<String, dynamic>, (payload) => payload as String)',
         ),
       );
@@ -745,7 +763,7 @@ void main() {
       expect(model.warnings, isEmpty);
       expect(
         _generateModel(model),
-        contains(
+        containsSource(
           'return result == null ? null : RealtimeChannel.fromJsonValue(result as Map<String, dynamic>, (payload) => payload as String)',
         ),
       );
@@ -834,7 +852,8 @@ void main() {
       // `_client.call('<fullName>', ...)` that precedes the return.
       final rawOps = <String>{};
       final allOps = <String>{};
-      final re = RegExp(r"_client\.call\('([^']+)'[^;]*\);\s*return ([^\n]*);");
+      // `[^;]*` lets a return the formatter split over lines still match.
+      final re = RegExp(r"_client\.call\('([^']+)'[^;]*\);\s*return ([^;]*);");
       for (final m in re.allMatches(output)) {
         final fullName = m.group(1)!;
         allOps.add(fullName);
@@ -858,7 +877,7 @@ void main() {
         '(payload) => (payload as List<dynamic>).cast<String>())',
         '(payload) => Color.fromJson(payload as String))',
       ]) {
-        expect(output, contains(decode));
+        expect(output, containsSource(decode));
       }
     });
   });
@@ -889,10 +908,10 @@ void main() {
           types: {},
         ),
       );
-      expect(output, contains('Future<(num, num, String)> getCoords()'));
-      expect(output, contains('(result as List<dynamic>)[0] as num'));
-      expect(output, contains('(result as List<dynamic>)[1] as num'));
-      expect(output, contains('(result as List<dynamic>)[2] as String'));
+      expect(output, containsSource('Future<(num, num, String)> getCoords()'));
+      expect(output, containsSource('(result as List<dynamic>)[0] as num'));
+      expect(output, containsSource('(result as List<dynamic>)[1] as num'));
+      expect(output, containsSource('(result as List<dynamic>)[2] as String'));
     });
 
     // An optional element (TypeScript `[string, number?]`) may be missing
@@ -922,16 +941,16 @@ void main() {
           types: {},
         ),
       );
-      expect(output, contains('Future<(String, int?)> getCursor()'));
-      expect(output, contains('(result as List<dynamic>)[0] as String'));
+      expect(output, containsSource('Future<(String, int?)> getCursor()'));
+      expect(output, containsSource('(result as List<dynamic>)[0] as String'));
       expect(
         output,
-        contains(
+        containsSource(
           '((result as List<dynamic>).length > 1 '
           '? (result as List<dynamic>)[1] : null)',
         ),
       );
-      expect(output, isNot(contains('(result as List<dynamic>)[1] as')));
+      expect(output, isNot(containsSource('(result as List<dynamic>)[1] as')));
     });
 
     test('emits tuple toJson as list for params', () {
@@ -966,7 +985,7 @@ void main() {
       );
       expect(
         output,
-        contains(
+        containsSource(
           r'      [coords.$1, coords.$2],'
           '\n',
         ),
@@ -1016,7 +1035,10 @@ void main() {
 
     test('emits UnknownTransferable as the return type', () {
       final output = _generate(spec);
-      expect(output, contains('Future<UnknownTransferable> connectDevice('));
+      expect(
+        output,
+        containsSource('Future<UnknownTransferable> connectDevice('),
+      );
     });
 
     test(
@@ -1025,7 +1047,7 @@ void main() {
         final output = _generate(spec);
         expect(
           output,
-          contains(
+          containsSource(
             'UnknownTransferable.fromJson(result, '
             "expectedTag: 'example-iot/device-link')",
           ),
@@ -1034,14 +1056,14 @@ void main() {
     );
 
     test('still emits the type-argument payload model', () {
-      expect(_generate(spec), contains('class Telemetry'));
+      expect(_generate(spec), containsSource('class Telemetry'));
     });
 
     test('emits the AWSBLOCKS-NATIVE-001 diagnostic naming the type arg', () {
       final model = _build(spec);
       expect(
         model.warnings,
-        contains(
+        containsSource(
           'AWSBLOCKS-NATIVE-001: api.connectDevice returns unbound transferable '
           "'example-iot/device-link' on dart; generated UnknownTransferable "
           'with type argument Telemetry.',
@@ -1076,7 +1098,7 @@ void main() {
       );
       expect(
         model.warnings,
-        contains(
+        containsSource(
           'AWSBLOCKS-NATIVE-001: api.connectDevice returns unbound transferable '
           "'example-iot/device-link' on dart; generated UnknownTransferable "
           'with no generated type-argument models.',
@@ -1137,7 +1159,7 @@ void main() {
       );
       expect(
         model.warnings,
-        contains(
+        containsSource(
           'AWSBLOCKS-NATIVE-001: other.get returns unbound transferable '
           "'example-iot/device-link' on dart; generated UnknownTransferable "
           'with type argument GetResultMessage2.',
@@ -1185,10 +1207,10 @@ void main() {
           },
         }),
       );
-      expect(output, isNot(contains('class UnknownTransferable')));
+      expect(output, isNot(containsSource('class UnknownTransferable')));
       expect(
         output,
-        contains(
+        containsSource(
           "UnknownTransferable.fromJson(result, "
           "expectedTag: 'example-iot/device-link')",
         ),
@@ -1224,8 +1246,8 @@ void main() {
         }),
       );
       final output = _generateModel(model);
-      expect(output, contains('final dynamic link;'));
-      expect(output, isNot(contains('UnknownTransferable')));
+      expect(output, containsSource('final dynamic link;'));
+      expect(output, isNot(containsSource('UnknownTransferable')));
       expect(model.warnings, isEmpty);
     });
 
@@ -1239,10 +1261,10 @@ void main() {
         }),
       );
       final output = _generateModel(model);
-      expect(output, contains('Future<dynamic> get'));
-      expect(output, isNot(contains('dynamic?')));
-      expect(output, contains('return result;'));
-      expect(output, isNot(contains('UnknownTransferable')));
+      expect(output, containsSource('Future<dynamic> get'));
+      expect(output, isNot(containsSource('dynamic?')));
+      expect(output, containsSource('return result;'));
+      expect(output, isNot(containsSource('UnknownTransferable')));
       expect(model.warnings, isEmpty);
     });
 
@@ -1251,9 +1273,9 @@ void main() {
         resultSpec({'type': 'array', 'items': unknownTransferable}),
       );
       final output = _generateModel(model);
-      expect(output, contains('Future<List<dynamic>> get'));
-      expect(output, contains('.cast<dynamic>()'));
-      expect(output, isNot(contains('UnknownTransferable')));
+      expect(output, containsSource('Future<List<dynamic>> get'));
+      expect(output, containsSource('.cast<dynamic>()'));
+      expect(output, isNot(containsSource('UnknownTransferable')));
       expect(model.warnings, isEmpty);
     });
   });
@@ -1316,21 +1338,21 @@ void main() {
     );
 
     test('never emits dynamic?', () {
-      expect(output, isNot(contains('dynamic?')));
+      expect(output, isNot(containsSource('dynamic?')));
     });
 
     test('fields', () {
-      expect(output, contains('final dynamic optionalPayload;'));
-      expect(output, contains('final dynamic nullablePayload;'));
-      expect(output, contains("json['optionalPayload'] as dynamic,"));
-      expect(output, contains("json['nullablePayload'] as dynamic,"));
+      expect(output, containsSource('final dynamic optionalPayload;'));
+      expect(output, containsSource('final dynamic nullablePayload;'));
+      expect(output, containsSource("json['optionalPayload'] as dynamic,"));
+      expect(output, containsSource("json['nullablePayload'] as dynamic,"));
     });
 
     test('parameters and collections', () {
-      expect(output, contains('required dynamic maybe'));
-      expect(output, contains('required List<dynamic> holes'));
-      expect(output, contains('required Map<String, dynamic> sparse'));
-      expect(output, contains('dynamic extra}'));
+      expect(output, containsSource('required dynamic maybe'));
+      expect(output, containsSource('required List<dynamic> holes'));
+      expect(output, containsSource('required Map<String, dynamic> sparse'));
+      expect(output, containsSource('dynamic extra}'));
     });
   });
 
@@ -1395,13 +1417,13 @@ void main() {
     );
 
     test('never null-checks a field inline', () {
-      expect(output, isNot(contains('== null ||')));
+      expect(output, isNot(containsSource('== null ||')));
     });
 
     test('a required non-null field is checked directly', () {
       expect(
         output,
-        contains(
+        containsSource(
           "    if (!(name.length >= 1)) throw ArgumentError('name must be at least 1 characters');",
         ),
       );
@@ -1410,7 +1432,7 @@ void main() {
     test('an optional field binds a non-null local for every check', () {
       expect(
         output,
-        contains(
+        containsSource(
           '    if (nickname case final nickname?) {\n'
           "      if (!(nickname.length >= 2)) throw ArgumentError('nickname must be at least 2 characters');\n"
           "      if (!(nickname.length <= 30)) throw ArgumentError('nickname must be at most 30 characters');\n"
@@ -1418,33 +1440,33 @@ void main() {
           '    }\n',
         ),
       );
-      expect(output, contains('    if (score case final score?) {\n'));
-      expect(output, contains('if (!(score >= 0)) throw'));
-      expect(output, contains('if (!(score <= 1)) throw'));
-      expect(output, contains('    if (step case final step?) {\n'));
-      expect(output, contains('if (!(step > 0)) throw'));
-      expect(output, contains('if (!(step < 10)) throw'));
-      expect(output, contains('if (!(step % 2 == 0)) throw'));
-      expect(output, contains('    if (tags case final tags?) {\n'));
-      expect(output, contains('if (!(tags.length >= 1)) throw'));
-      expect(output, contains('if (!(tags.length <= 5)) throw'));
+      expect(output, containsSource('    if (score case final score?) {\n'));
+      expect(output, containsSource('if (!(score >= 0)) throw'));
+      expect(output, containsSource('if (!(score <= 1)) throw'));
+      expect(output, containsSource('    if (step case final step?) {\n'));
+      expect(output, containsSource('if (!(step > 0)) throw'));
+      expect(output, containsSource('if (!(step < 10)) throw'));
+      expect(output, containsSource('if (!(step % 2 == 0)) throw'));
+      expect(output, containsSource('    if (tags case final tags?) {\n'));
+      expect(output, containsSource('if (!(tags.length >= 1)) throw'));
+      expect(output, containsSource('if (!(tags.length <= 5)) throw'));
     });
 
     test('a keyword-escaped field name is escaped in the message', () {
       expect(
         output,
-        contains(
+        containsSource(
           r"    if (!(class$.length >= 1)) throw ArgumentError('class\$ must be at least 1 characters');",
         ),
       );
     });
 
     test('a required but nullable field binds a local too', () {
-      expect(output, contains('  final String? motto;'));
-      expect(output, contains('    required this.motto,'));
+      expect(output, containsSource('  final String? motto;'));
+      expect(output, containsSource('    required this.motto,'));
       expect(
         output,
-        contains(
+        containsSource(
           '    if (motto case final motto?) {\n'
           "      if (!(motto.length >= 3)) throw ArgumentError('motto must be at least 3 characters');\n"
           '    }\n',
@@ -1547,26 +1569,39 @@ void main() {
     test('fields keep their channel types', () {
       expect(
         output,
-        contains('  final RealtimeChannel<SessionResultChatMessage> chat;'),
-      );
-      expect(output, contains('  final RealtimeChannel<List<String>> tags;'));
-      expect(output, contains('  final RealtimeChannel<List<int>> counts;'));
-      expect(output, contains('  final RealtimeChannel<int> ticks;'));
-      expect(output, contains('  final RealtimeChannel<dynamic> anything;'));
-      expect(
-        output,
-        contains('  final RealtimeChannel<SessionResultMaybeMessage>? maybe;'),
+        containsSource(
+          '  final RealtimeChannel<SessionResultChatMessage> chat;',
+        ),
       );
       expect(
         output,
-        contains('  final RealtimeChannel<List<String>>? nullable;'),
+        containsSource('  final RealtimeChannel<List<String>> tags;'),
+      );
+      expect(
+        output,
+        containsSource('  final RealtimeChannel<List<int>> counts;'),
+      );
+      expect(output, containsSource('  final RealtimeChannel<int> ticks;'));
+      expect(
+        output,
+        containsSource('  final RealtimeChannel<dynamic> anything;'),
+      );
+      expect(
+        output,
+        containsSource(
+          '  final RealtimeChannel<SessionResultMaybeMessage>? maybe;',
+        ),
+      );
+      expect(
+        output,
+        containsSource('  final RealtimeChannel<List<String>>? nullable;'),
       );
     });
 
     test('a field with an object message uses fromJson', () {
       expect(
         output,
-        contains(
+        containsSource(
           "      chat: RealtimeChannel.fromJson(json['chat'] as Map<String, dynamic>, (json) => SessionResultChatMessage.fromJson(json)),",
         ),
       );
@@ -1575,25 +1610,25 @@ void main() {
     test('a field with any other message decodes the payload value', () {
       expect(
         output,
-        contains(
+        containsSource(
           "      tags: RealtimeChannel.fromJsonValue(json['tags'] as Map<String, dynamic>, (payload) => (payload as List<dynamic>).cast<String>()),",
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           "      counts: RealtimeChannel.fromJsonValue(json['counts'] as Map<String, dynamic>, (payload) => (payload as List<dynamic>).cast<int>()),",
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           "      ticks: RealtimeChannel.fromJsonValue(json['ticks'] as Map<String, dynamic>, (payload) => (payload as num).toInt()),",
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           "      anything: RealtimeChannel.fromJsonValue(json['anything'] as Map<String, dynamic>, (payload) => payload),",
         ),
       );
@@ -1602,13 +1637,13 @@ void main() {
     test('optional and nullable fields hydrate only when present', () {
       expect(
         output,
-        contains(
+        containsSource(
           "      maybe: json['maybe'] != null ? RealtimeChannel.fromJson(json['maybe'] as Map<String, dynamic>, (json) => SessionResultMaybeMessage.fromJson(json)) : null,",
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           "      nullable: json['nullable'] != null ? RealtimeChannel.fromJsonValue(json['nullable'] as Map<String, dynamic>, (payload) => (payload as List<dynamic>).cast<String>()) : null,",
         ),
       );
@@ -1617,13 +1652,13 @@ void main() {
     test('file handle fields are hydrated too', () {
       expect(
         output,
-        contains(
+        containsSource(
           "      file: FileDownloadHandle.fromJson(json['file'] as Map<String, dynamic>),",
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           "      upload: FileUploadHandle.fromJson(json['upload'] as Map<String, dynamic>),",
         ),
       );
@@ -1632,25 +1667,27 @@ void main() {
     test('a direct result with a non-object message decodes the value', () {
       expect(
         output,
-        contains('Future<RealtimeChannel<List<String>>> tagChannel()'),
+        containsSource('Future<RealtimeChannel<List<String>>> tagChannel()'),
       );
       expect(
         output,
-        contains(
+        containsSource(
           '    return RealtimeChannel.fromJsonValue(result as Map<String, dynamic>, (payload) => (payload as List<dynamic>).cast<String>());',
         ),
       );
-      expect(output, isNot(contains('List<String>.fromJson')));
+      expect(output, isNot(containsSource('List<String>.fromJson')));
     });
 
     test('a nullable direct result hydrates only when present', () {
       expect(
         output,
-        contains('Future<RealtimeChannel<List<String>>?> maybeTagChannel()'),
+        containsSource(
+          'Future<RealtimeChannel<List<String>>?> maybeTagChannel()',
+        ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           '    return result == null ? null : RealtimeChannel.fromJsonValue(result as Map<String, dynamic>, (payload) => (payload as List<dynamic>).cast<String>());',
         ),
       );
@@ -1731,34 +1768,36 @@ void main() {
     test('record values decode through fromJson', () {
       expect(
         output,
-        contains(
+        containsSource(
           "      byName: (json['byName'] as Map<String, dynamic>).map((k, v) => MapEntry(k, Entry.fromJson(v as Map<String, dynamic>))),",
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           "      maybeByName: (json['maybeByName'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, Entry.fromJson(v as Map<String, dynamic>))),",
         ),
       );
-      expect(output, isNot(contains('v as Entry')));
+      expect(output, isNot(containsSource('v as Entry')));
     });
 
     test('enum values decode through fromJson', () {
       expect(
         output,
-        contains(
+        containsSource(
           "      levels: (json['levels'] as Map<String, dynamic>).map((k, v) => MapEntry(k, Level.fromJson(v as String))),",
         ),
       );
     });
 
     test('inline enum values decode through fromJson', () {
+      // Matched against the layout-free form: the formatter splits this call
+      // when the generated enum name is long.
       expect(
-        output,
+        normalizeSource(output),
         matches(
           RegExp(
-            r"      moods: \(json\['moods'\] as Map<String, dynamic>\)\.map\(\(k, v\) => MapEntry\(k, \w+\.fromJson\(v as String\)\)\),",
+            r"moods:\(json\['moods'\]as Map<String,dynamic>\)\.map\(\(k,v\)=>MapEntry\(k,\w+\.fromJson\(v as String\)\)\)",
           ),
         ),
       );
@@ -1767,7 +1806,7 @@ void main() {
     test('primitive values keep the plain cast', () {
       expect(
         output,
-        contains(
+        containsSource(
           "      counts: (json['counts'] as Map<String, dynamic>).map((k, v) => MapEntry(k, v as int)),",
         ),
       );
@@ -1807,8 +1846,8 @@ void main() {
           }),
         );
         final output = _generateModel(model);
-        expect(output, contains('Future<$expectedType> get'));
-        expect(output, isNot(contains('UnknownTransferable')));
+        expect(output, containsSource('Future<$expectedType> get'));
+        expect(output, isNot(containsSource('UnknownTransferable')));
         expect(
           model.warnings.where((w) => w.contains('AWSBLOCKS-NATIVE-001')),
           isEmpty,
@@ -1820,7 +1859,7 @@ void main() {
     // so a switch arm added without a set entry can't bind silently.
     test('a tag outside the set never maps to a concrete type', () {
       const tag = 'drift-probe/never-registered';
-      expect(knownTransferableTags, isNot(contains(tag)));
+      expect(knownTransferableTags, isNot(containsSource(tag)));
 
       // Nested position: stays dynamic, not a concrete runtime type.
       final nested = _generate(
@@ -1845,7 +1884,7 @@ void main() {
           ],
         }),
       );
-      expect(nested, contains('final dynamic link;'));
+      expect(nested, containsSource('final dynamic link;'));
 
       // Direct position: the only in-scope fallback — UnknownTransferable,
       // never a concrete handle type.
@@ -1865,7 +1904,7 @@ void main() {
           ],
         }),
       );
-      expect(direct, contains('Future<UnknownTransferable> get'));
+      expect(direct, containsSource('Future<UnknownTransferable> get'));
     });
   });
 }

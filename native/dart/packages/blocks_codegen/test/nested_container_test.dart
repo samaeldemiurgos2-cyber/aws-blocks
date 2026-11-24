@@ -8,6 +8,8 @@ import 'package:blocks_codegen/src/generator.dart';
 import 'package:blocks_codegen/src/parser.dart';
 import 'package:test/test.dart';
 
+import 'support/source_matchers.dart';
+
 // Containers (lists, maps, nullables, tuples, and any nesting of them) whose
 // elements need converting used to decode with a bare cast: `v as List<Note>`,
 // `.cast<RealtimeChannel<Note>>()`, `.cast<Level>()`. That compiles but throws
@@ -206,13 +208,13 @@ void main() {
     test('a map of lists of primitives casts the inner list', () {
       expect(
         output,
-        contains(
+        containsSource(
           "      tagsByUser: (json['tagsByUser'] as Map<String, dynamic>).map((k, v) => MapEntry(k, (v as List<dynamic>).cast<String>())),",
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           "      scoresByUser: (json['scoresByUser'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, (v as List<dynamic>).cast<int>())),",
         ),
       );
@@ -221,7 +223,7 @@ void main() {
     test('a map of lists of models decodes each model', () {
       expect(
         output,
-        contains(
+        containsSource(
           "      notesByTag: (json['notesByTag'] as Map<String, dynamic>).map((k, v) => MapEntry(k, (v as List<dynamic>).map((e1) => Note.fromJson(e1 as Map<String, dynamic>)).toList())),",
         ),
       );
@@ -230,7 +232,7 @@ void main() {
     test('a list of maps of models decodes each model', () {
       expect(
         output,
-        contains(
+        containsSource(
           "      pages: (json['pages'] as List<dynamic>).map((e) => (e as Map<String, dynamic>).map((k1, v1) => MapEntry(k1, Note.fromJson(v1 as Map<String, dynamic>)))).toList(),",
         ),
       );
@@ -239,7 +241,7 @@ void main() {
     test('a list of lists of models decodes each model', () {
       expect(
         output,
-        contains(
+        containsSource(
           "      grid: (json['grid'] as List<dynamic>).map((e) => (e as List<dynamic>).map((e1) => Note.fromJson(e1 as Map<String, dynamic>)).toList()).toList(),",
         ),
       );
@@ -248,7 +250,7 @@ void main() {
     test('a list of schema enums decodes from a string, not a map', () {
       expect(
         output,
-        contains(
+        containsSource(
           "      levels: (json['levels'] as List<dynamic>).map((e) => Level.fromJson(e as String)).toList(),",
         ),
       );
@@ -257,13 +259,13 @@ void main() {
     test('maps of lists and maps of maps of enums decode each enum', () {
       expect(
         output,
-        contains(
+        containsSource(
           "      levelsByUser: (json['levelsByUser'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, (v as List<dynamic>).map((e1) => Level.fromJson(e1 as String)).toList())),",
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           "      nestedLevels: (json['nestedLevels'] as Map<String, dynamic>).map((k, v) => MapEntry(k, (v as Map<String, dynamic>).map((k1, v1) => MapEntry(k1, Level.fromJson(v1 as String))))),",
         ),
       );
@@ -272,7 +274,7 @@ void main() {
     test('a list of nullable models decodes the non-null ones', () {
       expect(
         output,
-        contains(
+        containsSource(
           "      maybeNotes: (json['maybeNotes'] as List<dynamic>).map((e) => e == null ? null : Note.fromJson(e as Map<String, dynamic>)).toList(),",
         ),
       );
@@ -281,7 +283,7 @@ void main() {
     test('a list of tuples decodes each tuple element', () {
       expect(
         output,
-        contains(
+        containsSource(
           "      pairs: (json['pairs'] as List<dynamic>).map((e) => ((e as List<dynamic>)[0] as String, Note.fromJson((e as List<dynamic>)[1] as Map<String, dynamic>))).toList(),",
         ),
       );
@@ -290,7 +292,7 @@ void main() {
     test('additional properties holding models decode each model', () {
       expect(
         output,
-        contains(
+        containsSource(
           '            .map((e) => MapEntry(e.key, Note.fromJson(e.value as Map<String, dynamic>))),',
         ),
       );
@@ -301,13 +303,13 @@ void main() {
     test('a list of realtime channels hydrates each channel', () {
       expect(
         output,
-        contains(
+        containsSource(
           "      channels: (json['channels'] as List<dynamic>).map((e) => RealtimeChannel.fromJson(e as Map<String, dynamic>, (json) => Note.fromJson(json))).toList(),",
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           "      tagFeeds: (json['tagFeeds'] as List<dynamic>?)?.map((e) => RealtimeChannel.fromJsonValue(e as Map<String, dynamic>, (payload) => (payload as List<dynamic>).cast<String>())).toList(),",
         ),
       );
@@ -316,7 +318,7 @@ void main() {
     test('a map of realtime channels hydrates each channel', () {
       expect(
         output,
-        contains(
+        containsSource(
           "      feedsByRoom: (json['feedsByRoom'] as Map<String, dynamic>).map((k, v) => MapEntry(k, RealtimeChannel.fromJson(v as Map<String, dynamic>, (json) => Note.fromJson(json)))),",
         ),
       );
@@ -325,7 +327,7 @@ void main() {
     test('a list of file handles hydrates each handle', () {
       expect(
         output,
-        contains(
+        containsSource(
           "      downloads: (json['downloads'] as List<dynamic>).map((e) => FileDownloadHandle.fromJson(e as Map<String, dynamic>)).toList(),",
         ),
       );
@@ -336,13 +338,13 @@ void main() {
     test('a model holding one takes a BlocksClient in fromJson', () {
       expect(
         output,
-        contains(
+        containsSource(
           '  factory SignInOption.fromJson(Map<String, dynamic> json, BlocksClient client) {',
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           "      client: OidcClient.fromJson(json['client'] as Map<String, dynamic>, baseUrl: client.baseUrl, tokenStore: client.tokenStore, sessionStore: client.sessionStore),",
         ),
       );
@@ -351,63 +353,63 @@ void main() {
     test('so does a model holding one at any depth, and passes it on', () {
       expect(
         output,
-        contains(
+        containsSource(
           '  factory LoginMenu.fromJson(Map<String, dynamic> json, BlocksClient client) {',
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           "      primary: SignInOption.fromJson(json['primary'] as Map<String, dynamic>, client),",
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           "      options: (json['options'] as List<dynamic>).map((e) => SignInOption.fromJson(e as Map<String, dynamic>, client)).toList(),",
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           "      byProvider: (json['byProvider'] as Map<String, dynamic>).map((k, v) => MapEntry(k, SignInOption.fromJson(v as Map<String, dynamic>, client))),",
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           "      fallback: json['fallback'] != null ? OidcClient.fromJson(json['fallback'] as Map<String, dynamic>, baseUrl: client.baseUrl, tokenStore: client.tokenStore, sessionStore: client.sessionStore) : null,",
         ),
       );
       // A model with no oidc/client keeps its one-argument fromJson.
       expect(
         output,
-        contains(
+        containsSource(
           "      notes: (json['notes'] as List<dynamic>).map((e) => Note.fromJson(e as Map<String, dynamic>)).toList(),",
         ),
       );
       expect(
         output,
-        contains('  factory Note.fromJson(Map<String, dynamic> json) {'),
+        containsSource('  factory Note.fromJson(Map<String, dynamic> json) {'),
       );
     });
 
     test('a sealed class holding one passes it to every variant', () {
       expect(
         output,
-        contains(
+        containsSource(
           '  static Choice fromJson(Map<String, dynamic> json, BlocksClient client) {',
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           "      case 'oidc': return OidcChoice.fromJson(json, client);",
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           "      case 'none': return NoneChoice.fromJson(json, client);",
         ),
       );
@@ -416,13 +418,13 @@ void main() {
     test('an operation passes its own client', () {
       expect(
         output,
-        contains(
+        containsSource(
           '    return LoginMenu.fromJson(result as Map<String, dynamic>, _client);',
         ),
       );
       expect(
         output,
-        contains(
+        containsSource(
           '    return Choice.fromJson(result as Map<String, dynamic>, _client);',
         ),
       );
@@ -433,7 +435,7 @@ void main() {
     test('a map of lists of models', () {
       expect(
         output,
-        contains(
+        containsSource(
           '    return (result as Map<String, dynamic>).map((k, v) => MapEntry(k, (v as List<dynamic>).map((e1) => Note.fromJson(e1 as Map<String, dynamic>)).toList()));',
         ),
       );
@@ -442,7 +444,7 @@ void main() {
     test('a list of realtime channels', () {
       expect(
         output,
-        contains(
+        containsSource(
           '    return (result as List<dynamic>).map((e) => RealtimeChannel.fromJson(e as Map<String, dynamic>, (json) => Note.fromJson(json))).toList();',
         ),
       );
@@ -451,7 +453,7 @@ void main() {
     test('a list of schema enums', () {
       expect(
         output,
-        contains(
+        containsSource(
           '    return (result as List<dynamic>).map((e) => Level.fromJson(e as String)).toList();',
         ),
       );
@@ -460,7 +462,7 @@ void main() {
     test('a nullable list of models', () {
       expect(
         output,
-        contains(
+        containsSource(
           '    return (result as List<dynamic>?)?.map((e) => Note.fromJson(e as Map<String, dynamic>)).toList();',
         ),
       );
@@ -469,7 +471,7 @@ void main() {
     test('a nullable schema enum decodes from a string', () {
       expect(
         output,
-        contains(
+        containsSource(
           '    return result == null ? null : Level.fromJson(result as String);',
         ),
       );
@@ -478,7 +480,7 @@ void main() {
     test('a map of lists of lists of primitives', () {
       expect(
         output,
-        contains(
+        containsSource(
           '    return (result as Map<String, dynamic>).map((k, v) => MapEntry(k, (v as List<dynamic>).map((e1) => (e1 as List<dynamic>).cast<String>()).toList()));',
         ),
       );
@@ -499,14 +501,14 @@ void main() {
         "      'maybeNotes': maybeNotes.map((e) => e?.toJson()).toList(),",
         "      'pairs': pairs.map((e) => [e.\$1, e.\$2.toJson()]).toList(),",
       ]) {
-        expect(output, contains(line));
+        expect(output, containsSource(line));
       }
     });
 
     test('an optional tuple binds a non-null local', () {
       expect(
         output,
-        contains(
+        containsSource(
           "      if (pair != null) 'pair': switch (pair) { final value? => [value.\$1, value.\$2.toJson()], _ => null },",
         ),
       );
@@ -515,7 +517,7 @@ void main() {
     test('additional properties holding models encode each model', () {
       expect(
         output,
-        contains(
+        containsSource(
           '      for (final e in additionalProperties.entries)\n'
           "        if (!const {'name'}.contains(e.key)) e.key: e.value.toJson(),",
         ),
@@ -525,18 +527,18 @@ void main() {
     test('parameters encode element by element', () {
       expect(
         output,
-        contains(
+        containsSource(
           '      groups.map((k, v) => MapEntry(k, v.map((e1) => e1.toJson()).toList())),',
         ),
       );
       // An optional parameter before a required one keeps its slot.
       expect(
         output,
-        contains('      levels?.map((e) => e.toJson()).toList(),'),
+        containsSource('      levels?.map((e) => e.toJson()).toList(),'),
       );
       expect(
         output,
-        contains(
+        containsSource(
           '      grid.map((e) => e.map((e1) => e1.toJson()).toList()).toList(),',
         ),
       );
@@ -552,9 +554,9 @@ void main() {
     final badClassAs = RegExp(r'\bas (?!(String|List|Map)\b)[A-Z]');
     for (final line in const LineSplitter().convert(output)) {
       if (line.trimLeft().startsWith('//')) continue;
-      expect(line, isNot(contains(badListCast)));
-      expect(line, isNot(contains(badCollectionAs)));
-      expect(line, isNot(contains(badClassAs)));
+      expect(line, isNot(containsSource(badListCast)));
+      expect(line, isNot(containsSource(badCollectionAs)));
+      expect(line, isNot(containsSource(badClassAs)));
     }
   });
 }

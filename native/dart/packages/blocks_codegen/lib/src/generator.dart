@@ -1,10 +1,14 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import 'package:dart_style/dart_style.dart';
+import 'package:pub_semver/pub_semver.dart';
+
 import 'builder.dart';
 import 'dart_source.dart';
 import 'diagnostics.dart';
 import 'identifiers.dart';
+import 'language_version.dart';
 import 'model.dart';
 
 /// The oldest `blocks_runtime` that has every API generated code calls
@@ -14,15 +18,50 @@ import 'model.dart';
 /// together with the `blocks_runtime` constraint in `pubspec.yaml`.
 const minimumRuntimeVersion = '1.0.0';
 
+/// The Dart language version output is formatted for when the language
+/// version of the package it is written into is unknown.
+///
+/// It is the lower bound of `blocks_runtime`'s SDK constraint, so it is the
+/// oldest language version a package that can use the generated client may
+/// have. `dart format` picks its style from the file's language version, so a
+/// package on a newer one may still reformat a few constructs; pass that
+/// package's version to [DartCodeGenerator] to match it exactly.
+final defaultLanguageVersion = Version(3, 11, 0);
+
+/// The page width generated code is formatted to. Each generated library
+/// pins it with a `// dart format width=` comment, so a package that sets a
+/// different `formatter: page_width` in `analysis_options.yaml` leaves the
+/// file as generated.
+const generatedPageWidth = 80;
+
 /// Generates Dart source code from a [CodegenModel].
 class DartCodeGenerator {
-  const DartCodeGenerator();
+  /// Creates a generator whose output is formatted for [languageVersion], the
+  /// Dart language version of the package the output is written into
+  /// ([defaultLanguageVersion] when omitted).
+  const DartCodeGenerator({this.languageVersion});
+
+  /// The Dart language version the output is formatted for. `dart format`
+  /// formats a file in the style of its package's language version, so this
+  /// should be that version for the output to be left unchanged by it.
+  final Version? languageVersion;
 
   /// Emits the complete contents of one generated `.blocks.dart` library.
   ///
   /// Output is deterministic for a given [model], so it is safe to check in
-  /// and diff.
+  /// and diff. It is formatted as `dart format` formats it at
+  /// [languageVersion], so running `dart format` on it changes nothing.
+  ///
+  /// Throws an [ArgumentError] when [languageVersion] is older than
+  /// [minimumLanguageVersion], since the client could not compile there.
   String generate(CodegenModel model) {
+    final version = languageVersion;
+    if (version != null) {
+      final problem = unsupportedLanguageVersion(version);
+      if (problem != null) {
+        throw ArgumentError.value(version, 'languageVersion', problem);
+      }
+    }
     _checkNoTransferableParams(model);
     final buf = StringBuffer();
     buf.writeln('// GENERATED CODE — DO NOT MODIFY BY HAND');
@@ -33,6 +72,8 @@ class DartCodeGenerator {
     );
     buf.writeln('// Requires blocks_runtime $minimumRuntimeVersion or later.');
     buf.writeln('// ignore_for_file: constant_identifier_names');
+    // Must come before any code for `dart format` to read it.
+    buf.writeln('// dart format width=$generatedPageWidth');
     buf.writeln();
     for (final directive in _imports(model)) {
       buf.writeln(directive);
@@ -216,7 +257,27 @@ class DartCodeGenerator {
 
     final output = buf.toString();
     _checkBoundTypesNotShadowed(model, output);
-    return output;
+    return _format(output);
+  }
+
+  /// Formats [source] with the formatter `dart format` runs, so the emitters
+  /// can build source without tracking line length: where a line splits
+  /// depends on the length of names from the spec, which only a full layout
+  /// pass gets right.
+  String _format(String source) {
+    final formatter = DartFormatter(
+      languageVersion: languageVersion ?? defaultLanguageVersion,
+      pageWidth: generatedPageWidth,
+    );
+    try {
+      return formatter.format(source);
+    } on FormatterException catch (e) {
+      // Unparseable output is a generator bug, never a property of the spec.
+      throw StateError(
+        'blocks_codegen generated Dart that does not parse; please report '
+        'this as a bug in blocks_codegen.\n${e.message()}',
+      );
+    }
   }
 
   String _emitType(

@@ -8,6 +8,8 @@ import 'package:blocks_codegen/src/generator.dart';
 import 'package:blocks_codegen/src/parser.dart';
 import 'package:test/test.dart';
 
+import 'support/source_matchers.dart';
+
 // The builder renames types after it resolves them: a schema whose one field
 // has a generic shape (`{value}`) takes a generic name (`ValueResult`), Pass 3
 // suffixes types that collide (`MakeResult2`), and Pass 4 makes names Dart
@@ -163,7 +165,9 @@ List<SchemaReference> _refs(CodegenModel model) {
 String _signature(String output) {
   final i = output.indexOf('Future<MakeResult> make(');
   expect(i, isNot(-1));
-  return output.substring(i, output.indexOf('\n', i));
+  // The formatter splits a long parameter list over several lines, so the
+  // signature runs to the body's opening brace, not the end of the line.
+  return output.substring(i, output.indexOf(') async {', i));
 }
 
 void main() {
@@ -188,29 +192,34 @@ void main() {
       test('an alias schema stays an alias: its `\$ref` uses its type', () {
         expect(
           _signature(output),
-          contains(
+          containsSource(
             'required String id, required List<String> tags, '
             'required String alias',
           ),
         );
-        expect(output, isNot(contains('UserId')));
-        expect(output, isNot(contains('IdAlias')));
+        expect(output, isNot(containsSource('UserId')));
+        expect(output, isNot(containsSource('IdAlias')));
       });
 
       test('a `\$ref` to a generically named schema names its class', () {
-        expect(output, contains('class ValueResult {'));
+        expect(output, containsSource('class ValueResult {'));
         expect(
           _signature(output),
-          contains('required ValueResult w, required List<ValueResult> ws'),
+          containsSource(
+            'required ValueResult w, required List<ValueResult> ws',
+          ),
         );
-        expect(output, contains("      w: ValueResult.fromJson(json['w']"));
-        expect(output, isNot(contains('Wrapper')));
+        expect(
+          output,
+          containsSource("      w: ValueResult.fromJson(json['w']"),
+        );
+        expect(output, isNot(containsSource('Wrapper')));
       });
 
       test('a nullable object schema keeps its class and its `?`', () {
-        expect(output, contains('class MaybeBox {'));
-        expect(_signature(output), contains('required MaybeBox? m'));
-        expect(output, contains('  final MaybeBox? m;'));
+        expect(output, containsSource('class MaybeBox {'));
+        expect(_signature(output), containsSource('required MaybeBox? m'));
+        expect(output, containsSource('  final MaybeBox? m;'));
       });
     });
   }
@@ -230,13 +239,13 @@ void main() {
     final target = model.types[(param.type as SchemaReference).name];
     expect(target, isA<RecordType>());
     expect((target as RecordType).fields.map((f) => f.name), ['z']);
-    expect(_signature(output), contains('required ${target.name} s'));
+    expect(_signature(output), containsSource('required ${target.name} s'));
     expect(target.name, isNot('MakeResult'));
   });
 
   test('a `\$ref` to a model keeps its name (guard)', () {
     final output = _generate(_build(_spec()));
-    expect(output, contains('class Holder {'));
-    expect(_signature(output), contains('required Holder h'));
+    expect(output, containsSource('class Holder {'));
+    expect(_signature(output), containsSource('required Holder h'));
   });
 }

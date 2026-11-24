@@ -5,6 +5,8 @@ import 'package:blocks_codegen/src/builder.dart';
 import 'package:blocks_codegen/src/generator.dart';
 import 'package:test/test.dart';
 
+import 'support/source_matchers.dart';
+
 /// JSON-RPC params are positional on a CDK Blocks server: `parseRpcRequest`
 /// (`packages/core`) passes an array as the method's argument list, and reads
 /// an object's values in order (`Object.values()`), so a by-name key that is
@@ -76,7 +78,7 @@ void main() {
       );
       expect(
         out,
-        contains(
+        containsSource(
           '    final params = <dynamic>[\n'
           '      first,\n'
           '      if (middle != null || last != null) middle,\n'
@@ -94,10 +96,10 @@ void main() {
         }),
         'echoArgs',
       );
-      expect(out, isNot(contains('<String, dynamic>{')));
-      expect(out, isNot(contains("'first'")));
-      expect(out, isNot(contains("'middle'")));
-      expect(out, isNot(contains("'last'")));
+      expect(out, isNot(containsSource('<String, dynamic>{')));
+      expect(out, isNot(containsSource("'first'")));
+      expect(out, isNot(containsSource("'middle'")));
+      expect(out, isNot(containsSource("'last'")));
     });
 
     test('required parameters are sent in spec order', () {
@@ -109,7 +111,7 @@ void main() {
       );
       expect(
         out,
-        contains(
+        containsSource(
           '    final params = <dynamic>[\n'
           '      b,\n'
           '      a,\n'
@@ -127,7 +129,7 @@ void main() {
       );
       expect(
         out,
-        contains(
+        containsSource(
           '    final params = <dynamic>[\n'
           '      a,\n'
           '      b,\n'
@@ -151,7 +153,7 @@ void main() {
       );
       expect(
         out,
-        contains(
+        containsSource(
           '    final params = <dynamic>[\n'
           '      a?.toJson(),\n'
           '      b.toJson(),\n'
@@ -173,7 +175,7 @@ void main() {
       );
       expect(
         out,
-        contains(
+        containsSource(
           '    final params = <dynamic>[\n'
           '      key,\n'
           '      if (leaf != null) leaf.toJson(),\n'
@@ -194,7 +196,7 @@ void main() {
       );
       expect(
         out,
-        contains(
+        containsSource(
           '    final params = <dynamic>[\n'
           '      leaf?.toJson(),\n'
           '      tail,\n'
@@ -212,7 +214,7 @@ void main() {
       );
       expect(
         out,
-        contains(
+        containsSource(
           '    final params = <dynamic>[\n'
           '      if (a != null || b != null) a,\n'
           '      if (b != null) b,\n'
@@ -225,7 +227,7 @@ void main() {
       final out = body(generate({'ping': []}), 'ping');
       expect(
         out,
-        contains(
+        containsSource(
           "    final result = await _client.call('api.ping', const <dynamic>[]);",
         ),
       );

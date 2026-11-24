@@ -120,4 +120,14 @@ if out="$(bash "$ANALYZE" "$REFUSED" 2>&1)"; then
 fi
 case "$out" in *"has both client.dart and codegen-error.txt"*) ;; *) fail "Case 10: unexpected output: $out" ;; esac
 
+# --- Case 11: a golden `dart format` would change fails, naming it ---
+UNFORMATTED="$WORK/unformatted"
+golden "$UNFORMATTED" 01-ok 'int answer() => 42;'
+golden "$UNFORMATTED" 02-unformatted 'int  answer( ) =>42 ;'
+if out="$(bash "$ANALYZE" "$UNFORMATTED" 2>&1)"; then
+  fail "Case 11: an unformatted golden should fail the run: $out"
+fi
+case "$out" in *"Changed lib/02-unformatted.dart"*) ;; *) fail "Case 11: the unformatted golden should be named: $out" ;; esac
+case "$out" in *"FAIL: dart_style would change"*) ;; *) fail "Case 11: unexpected summary: $out" ;; esac
+
 echo "PASS: analyze-fixture-goldens.sh"

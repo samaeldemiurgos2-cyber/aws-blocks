@@ -8,6 +8,8 @@ import 'package:blocks_codegen/src/generator.dart';
 import 'package:blocks_codegen/src/parser.dart';
 import 'package:test/test.dart';
 
+import 'support/source_matchers.dart';
+
 // A string enum a response carries is generated open: a value the client was
 // generated without decodes to `XUnknown` holding the string, instead of
 // throwing, and `toJson()` writes it back. An enum only parameters reach stays
@@ -27,17 +29,23 @@ void main() {
     final output = _generate('45-open-enums');
 
     test('a result enum is a sealed class with known and unknown cases', () {
-      expect(output, contains('sealed class Status {'));
-      expect(output, contains('enum StatusKnown implements Status {'));
-      expect(output, contains('final class StatusUnknown implements Status {'));
+      expect(output, containsSource('sealed class Status {'));
+      expect(output, containsSource('enum StatusKnown implements Status {'));
       expect(
         output,
-        contains('static const inProgress = StatusKnown.inProgress;'),
+        containsSource('final class StatusUnknown implements Status {'),
       );
-      expect(output, contains('static const values = StatusKnown.values;'));
       expect(
         output,
-        contains(
+        containsSource('static const inProgress = StatusKnown.inProgress;'),
+      );
+      expect(
+        output,
+        containsSource('static const values = StatusKnown.values;'),
+      );
+      expect(
+        output,
+        containsSource(
           'static Status fromJson(String json) => '
           'StatusKnown._jsonMap[json] ?? StatusUnknown(json);',
         ),
@@ -54,8 +62,12 @@ void main() {
           'FlaggedGetEventResultSeverity',
           'WatchTasksResultMessageChange',
         ]) {
-          expect(output, contains('sealed class $name {'), reason: name);
-          expect(output, contains('final class ${name}Unknown'), reason: name);
+          expect(output, containsSource('sealed class $name {'), reason: name);
+          expect(
+            output,
+            containsSource('final class ${name}Unknown'),
+            reason: name,
+          );
         }
       },
     );
@@ -63,20 +75,20 @@ void main() {
     test('a spec value named unknown keeps its name', () {
       expect(
         output,
-        contains('static const unknown = TaskSourceKnown.unknown;'),
+        containsSource('static const unknown = TaskSourceKnown.unknown;'),
       );
       expect(
         output,
-        contains('final class TaskSourceUnknown implements TaskSource {'),
+        containsSource('final class TaskSourceUnknown implements TaskSource {'),
       );
     });
 
     test('an enum only parameters reach stays closed', () {
-      expect(output, contains('enum ApiUpdateTaskSort {'));
-      expect(output, isNot(contains('ApiUpdateTaskSortUnknown')));
+      expect(output, containsSource('enum ApiUpdateTaskSort {'));
+      expect(output, isNot(containsSource('ApiUpdateTaskSortUnknown')));
       expect(
         output,
-        contains(
+        containsSource(
           'static ApiUpdateTaskSort fromJson(String json) => '
           'values.byName(json);',
         ),
@@ -85,7 +97,7 @@ void main() {
 
     test('an oidc/client provider enum is not a response position', () {
       final oidc = _generate('37-oidc-provider-enum');
-      expect(oidc, isNot(contains('Unknown implements')));
+      expect(oidc, isNot(containsSource('Unknown implements')));
     });
 
     test('the generated classes yield to spec names', () {
@@ -124,13 +136,16 @@ void main() {
       final out = const DartCodeGenerator().generate(
         CodegenModelBuilder().build(const OpenRpcParser().parse(spec)),
       );
-      expect(out, contains('class ModeUnknown {'));
-      expect(out, contains(r'final class ModeUnknown$ implements Mode {'));
-      expect(out, contains(r'?? ModeUnknown$(json);'));
+      expect(out, containsSource('class ModeUnknown {'));
+      expect(
+        out,
+        containsSource(r'final class ModeUnknown$ implements Mode {'),
+      );
+      expect(out, containsSource(r'?? ModeUnknown$(json);'));
       // A value named like the known-values enum doesn't shadow it.
       expect(
         out,
-        contains(r'  static const ModeKnown$ = ModeKnown.ModeKnown$;'),
+        containsSource(r'  static const ModeKnown$ = ModeKnown.ModeKnown$;'),
       );
     });
   });
@@ -175,7 +190,7 @@ dependencies:
       'bin/main.dart',
     ], workingDirectory: work.path);
     expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
-    expect(run.stdout, contains('ok'));
+    expect(run.stdout, containsSource('ok'));
   }, timeout: const Timeout(Duration(minutes: 3)));
 }
 

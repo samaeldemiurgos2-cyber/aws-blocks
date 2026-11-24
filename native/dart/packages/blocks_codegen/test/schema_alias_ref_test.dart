@@ -8,6 +8,8 @@ import 'package:blocks_codegen/src/generator.dart';
 import 'package:blocks_codegen/src/parser.dart';
 import 'package:test/test.dart';
 
+import 'support/source_matchers.dart';
+
 // A component schema that isn't a model, an enum or a discriminated union —
 // a string, an array, a map, a nullable, or a union the generator types as
 // `dynamic` (one discriminated by `const`, as in fixture 10) — has no Dart
@@ -136,7 +138,7 @@ void main() {
   test('a field typed by a `\$ref` to a non-model schema uses its type', () {
     expect(
       holder(),
-      contains(
+      containsSource(
         '  final String id;\n'
         '  final int count;\n'
         '  final int? maybeCount;\n'
@@ -156,7 +158,7 @@ void main() {
   test('fromJson decodes through the referenced schema\'s type', () {
     expect(
       holder(),
-      contains(
+      containsSource(
         "      id: json['id'] as String,\n"
         "      count: (json['count'] as num).toInt(),\n"
         "      maybeCount: (json['maybeCount'] as num?)?.toInt(),\n"
@@ -176,7 +178,7 @@ void main() {
   test('toJson encodes through the referenced schema\'s type', () {
     expect(
       holder(),
-      contains(
+      containsSource(
         "      'id': id,\n"
         "      'count': count,\n"
         "      if (maybeCount != null) 'maybeCount': maybeCount,\n"
@@ -196,25 +198,25 @@ void main() {
   test('`==` compares a `\$ref` list or map deeply', () {
     expect(
       holder(),
-      contains('          blocksDeepEquals(notes, other.notes) &&'),
+      containsSource('          blocksDeepEquals(notes, other.notes) &&'),
     );
     expect(
       holder(),
-      contains('          blocksDeepEquals(byId, other.byId) &&'),
+      containsSource('          blocksDeepEquals(byId, other.byId) &&'),
     );
   });
 
   test('operation parameters and results use the referenced type', () {
     expect(
       output,
-      contains(
+      containsSource(
         '  Future<Holder> fetch({required String id, required dynamic shape, List<String>? tags}) async {',
       ),
     );
-    expect(output, contains('  Future<List<Note>> shapes() async {'));
+    expect(output, containsSource('  Future<List<Note>> shapes() async {'));
     expect(
       output,
-      contains(
+      containsSource(
         '    return (result as List<dynamic>).map((e) => Note.fromJson(e as Map<String, dynamic>)).toList();',
       ),
     );
@@ -232,12 +234,16 @@ void main() {
       'Shape',
       'Loop',
     ]) {
-      expect(output, isNot(contains(RegExp('\\b$name\\b'))), reason: name);
+      expect(
+        output,
+        isNot(containsSource(RegExp('\\b$name\\b'))),
+        reason: name,
+      );
     }
   });
 
   test('a `\$ref` to a model, an enum or a sealed class is unchanged', () {
-    expect(output, contains('sealed class Kind {'));
-    expect(output, contains('class Note {'));
+    expect(output, containsSource('sealed class Kind {'));
+    expect(output, containsSource('class Note {'));
   });
 }

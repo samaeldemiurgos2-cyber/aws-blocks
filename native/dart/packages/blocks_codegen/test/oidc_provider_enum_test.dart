@@ -8,6 +8,8 @@ import 'package:blocks_codegen/src/generator.dart';
 import 'package:blocks_codegen/src/parser.dart';
 import 'package:test/test.dart';
 
+import 'support/source_matchers.dart';
+
 // An `oidc/client` whose `x-blocks-type-args[0]` is a string enum names the
 // providers its client signs in with. A direct or optional result generates
 // an enum of them implementing `OidcProvider` and returns
@@ -64,27 +66,32 @@ void main() {
     ]);
     expect(
       source,
-      contains('Future<TypedOidcClient<AuthApiGetClientProvider>> getClient()'),
+      containsSource(
+        'Future<TypedOidcClient<AuthApiGetClientProvider>> getClient()',
+      ),
     );
     expect(
       source,
-      contains('enum AuthApiGetClientProvider implements OidcProvider {'),
+      containsSource('enum AuthApiGetClientProvider implements OidcProvider {'),
     );
-    expect(source, contains("  google('google'),\n  github('github')\n;"));
     expect(
       source,
-      contains('  const AuthApiGetClientProvider(this.providerName);'),
+      containsSource("  google('google'),\n  github('github')\n;"),
     );
-    expect(source, contains('  @override\n  final String providerName;'));
     expect(
       source,
-      contains(
+      containsSource('  const AuthApiGetClientProvider(this.providerName);'),
+    );
+    expect(source, containsSource('  @override\n  final String providerName;'));
+    expect(
+      source,
+      containsSource(
         'static AuthApiGetClientProvider? fromProviderName(String name) {',
       ),
     );
     expect(
       source,
-      contains(
+      containsSource(
         'return TypedOidcClient<AuthApiGetClientProvider>(OidcClient.fromJson(result as Map<String, dynamic>, ',
       ),
     );
@@ -97,7 +104,7 @@ void main() {
     ]);
     expect(
       source,
-      contains(
+      containsSource(
         "export 'package:blocks_runtime/blocks_runtime.dart' show TypedOidcClient, OidcProvider;",
       ),
     );
@@ -115,18 +122,18 @@ void main() {
         'required': ['client'],
       }),
     ]);
-    expect(source, contains('show OidcClient, OidcAuthState'));
-    expect(source, isNot(contains('TypedOidcClient')));
-    expect(source, isNot(contains('OidcProvider')));
+    expect(source, containsSource('show OidcClient, OidcAuthState'));
+    expect(source, isNot(containsSource('TypedOidcClient')));
+    expect(source, isNot(containsSource('OidcProvider')));
   });
 
   test('a spec that names no providers takes any provider', () {
     final (:source, :warnings) = _generate([
       _method('auth.getClient', _oidc()),
     ]);
-    expect(source, contains('Future<OidcClient> getClient()'));
-    expect(source, contains('return OidcClient.fromJson('));
-    expect(source, isNot(contains('implements OidcProvider')));
+    expect(source, containsSource('Future<OidcClient> getClient()'));
+    expect(source, containsSource('return OidcClient.fromJson('));
+    expect(source, isNot(containsSource('implements OidcProvider')));
     expect(warnings, isEmpty);
   });
 
@@ -134,8 +141,8 @@ void main() {
     final (:source, warnings: _) = _generate([
       _method('auth.getClient', _oidc([])),
     ]);
-    expect(source, contains('Future<OidcClient> getClient()'));
-    expect(source, isNot(contains('implements OidcProvider')));
+    expect(source, containsSource('Future<OidcClient> getClient()'));
+    expect(source, isNot(containsSource('implements OidcProvider')));
   });
 
   test('a type argument with no enum takes any provider', () {
@@ -147,8 +154,8 @@ void main() {
         ],
       }),
     ]);
-    expect(source, contains('Future<OidcClient> getClient()'));
-    expect(source, isNot(contains('implements OidcProvider')));
+    expect(source, containsSource('Future<OidcClient> getClient()'));
+    expect(source, isNot(containsSource('implements OidcProvider')));
   });
 
   for (final (name, arg) in [
@@ -172,8 +179,8 @@ void main() {
           'x-blocks-type-args': [arg],
         }),
       ]);
-      expect(source, contains('Future<OidcClient> getClient()'));
-      expect(source, isNot(contains('implements OidcProvider')));
+      expect(source, containsSource('Future<OidcClient> getClient()'));
+      expect(source, isNot(containsSource('implements OidcProvider')));
     });
   }
 
@@ -183,13 +190,13 @@ void main() {
     ]);
     expect(
       source,
-      contains(
+      containsSource(
         'Future<TypedOidcClient<AuthApiGetClientProvider>?> getClient()',
       ),
     );
     expect(
       source,
-      contains(
+      containsSource(
         'return result == null ? null : TypedOidcClient<AuthApiGetClientProvider>(OidcClient.fromJson(',
       ),
     );
@@ -203,11 +210,11 @@ void main() {
         _oidc(['login.gov', 'my-sso', 'okta:corp', '2fa', 'login.gov', '_x']),
       ),
     ]);
-    expect(source, contains("  loginGov('login.gov'),"));
-    expect(source, contains("  mySso('my-sso'),"));
-    expect(source, contains("  oktaCorp('okta:corp'),"));
-    expect(source, contains(r"  $2fa('2fa'),"));
-    expect(source, contains(r"  $x('_x')"));
+    expect(source, containsSource("  loginGov('login.gov'),"));
+    expect(source, containsSource("  mySso('my-sso'),"));
+    expect(source, containsSource("  oktaCorp('okta:corp'),"));
+    expect(source, containsSource(r"  $2fa('2fa'),"));
+    expect(source, containsSource(r"  $x('_x')"));
     expect(RegExp(r'loginGov\(').allMatches(source), hasLength(1));
   });
 
@@ -218,10 +225,10 @@ void main() {
         _oidc(['values', 'name', 'providerName', 'fromProviderName']),
       ),
     ]);
-    expect(source, contains(r"  values$('values'),"));
-    expect(source, contains(r"  name$('name'),"));
-    expect(source, contains(r"  providerName$('providerName'),"));
-    expect(source, contains(r"  fromProviderName$('fromProviderName')"));
+    expect(source, containsSource(r"  values$('values'),"));
+    expect(source, containsSource(r"  name$('name'),"));
+    expect(source, containsSource(r"  providerName$('providerName'),"));
+    expect(source, containsSource(r"  fromProviderName$('fromProviderName')"));
   });
 
   test('two providers that reduce to one identifier are told apart, and '
@@ -229,9 +236,12 @@ void main() {
     final (:source, :warnings) = _generate([
       _method('auth.getClient', _oidc(['my-sso', 'my.sso'])),
     ]);
-    expect(source, contains("  mySso('my-sso'),"));
-    expect(source, contains(r"  mySso$('my.sso')"));
-    expect(warnings.single, contains("providers of auth.getClient 'my-sso'"));
+    expect(source, containsSource("  mySso('my-sso'),"));
+    expect(source, containsSource(r"  mySso$('my.sso')"));
+    expect(
+      warnings.single,
+      containsSource("providers of auth.getClient 'my-sso'"),
+    );
   });
 
   test('a type that already has the name renames the enum and says so', () {
@@ -263,18 +273,20 @@ void main() {
     );
     expect(
       source,
-      contains(
+      containsSource(
         'Future<TypedOidcClient<AuthApiGetClientResultProvider>> getClient({required AuthApiGetClientProvider hint})',
       ),
     );
-    expect(source, contains('class AuthApiGetClientProvider {'));
+    expect(source, containsSource('class AuthApiGetClientProvider {'));
     expect(
       source,
-      contains('enum AuthApiGetClientResultProvider implements OidcProvider'),
+      containsSource(
+        'enum AuthApiGetClientResultProvider implements OidcProvider',
+      ),
     );
     expect(
       warnings.single,
-      contains(
+      containsSource(
         'the provider enum of auth.getClient is `AuthApiGetClientResultProvider`',
       ),
     );
@@ -286,18 +298,21 @@ void main() {
       _method('auth.getPartnerClient', _oidc(['okta'])),
       _method('admin.getClient', _oidc(['github'])),
     ]);
-    expect(source, contains('enum AuthApiGetClientProvider implements'));
-    expect(source, contains('enum AuthApiGetPartnerClientProvider implements'));
-    expect(source, contains('enum AdminApiGetClientProvider implements'));
+    expect(source, containsSource('enum AuthApiGetClientProvider implements'));
     expect(
       source,
-      contains(
+      containsSource('enum AuthApiGetPartnerClientProvider implements'),
+    );
+    expect(source, containsSource('enum AdminApiGetClientProvider implements'));
+    expect(
+      source,
+      containsSource(
         'Future<TypedOidcClient<AuthApiGetPartnerClientProvider>> getPartnerClient()',
       ),
     );
     expect(
       source,
-      contains(
+      containsSource(
         'Future<TypedOidcClient<AdminApiGetClientProvider>> getClient()',
       ),
     );
@@ -318,10 +333,10 @@ void main() {
         'required': ['client', 'clients'],
       }),
     ]);
-    expect(source, isNot(contains('implements OidcProvider')));
-    expect(source, contains('  final OidcClient client;'));
-    expect(source, contains('  final List<OidcClient> clients;'));
-    expect(source, isNot(contains('TypedOidcClient<')));
+    expect(source, isNot(containsSource('implements OidcProvider')));
+    expect(source, containsSource('  final OidcClient client;'));
+    expect(source, containsSource('  final List<OidcClient> clients;'));
+    expect(source, isNot(containsSource('TypedOidcClient<')));
   });
 
   test('a client parameter is refused', () {
@@ -389,15 +404,15 @@ void main() {
         params: runtimeNamedParams(),
       ),
     ], schemas: runtimeNamedSchemas());
-    expect(source, contains(r'class OidcProvider$ {'));
-    expect(source, contains(r'enum TypedOidcClient$ {'));
+    expect(source, containsSource(r'class OidcProvider$ {'));
+    expect(source, containsSource(r'enum TypedOidcClient$ {'));
     expect(
       source,
-      contains('enum AuthApiGetClientProvider implements OidcProvider {'),
+      containsSource('enum AuthApiGetClientProvider implements OidcProvider {'),
     );
     expect(
       source,
-      contains(
+      containsSource(
         r'getClient({required OidcProvider$ p, required TypedOidcClient$ q})',
       ),
     );
@@ -408,11 +423,11 @@ void main() {
     final (:source, :warnings) = _generate([
       _method('auth.getClient', _oidc(), params: runtimeNamedParams()),
     ], schemas: runtimeNamedSchemas());
-    expect(source, contains('class OidcProvider {'));
-    expect(source, contains('enum TypedOidcClient {'));
+    expect(source, containsSource('class OidcProvider {'));
+    expect(source, containsSource('enum TypedOidcClient {'));
     expect(
       source,
-      contains(
+      containsSource(
         'getClient({required OidcProvider p, required TypedOidcClient q})',
       ),
     );
@@ -430,13 +445,15 @@ void main() {
         },
       },
     ], schemas: runtimeNamedSchemas());
-    expect(source, contains('class OidcProvider {'));
-    expect(source, contains('enum TypedOidcClient {'));
+    expect(source, containsSource('class OidcProvider {'));
+    expect(source, containsSource('enum TypedOidcClient {'));
     expect(
       source,
-      contains('list({required OidcProvider p, required TypedOidcClient q})'),
+      containsSource(
+        'list({required OidcProvider p, required TypedOidcClient q})',
+      ),
     );
-    expect(source, isNot(contains(r'$ {')));
+    expect(source, isNot(containsSource(r'$ {')));
     expect(warnings, isEmpty);
   });
 
@@ -455,10 +472,13 @@ void main() {
         ],
       ),
     ]);
-    expect(source, contains(r'getClient({required String TypedOidcClient$})'));
     expect(
       source,
-      contains('return TypedOidcClient<AuthApiGetClientProvider>('),
+      containsSource(r'getClient({required String TypedOidcClient$})'),
+    );
+    expect(
+      source,
+      containsSource('return TypedOidcClient<AuthApiGetClientProvider>('),
     );
   });
 
@@ -467,9 +487,12 @@ void main() {
       _method('auth.get_client', _oidc(['google'])),
       _method('auth.get-other-client', _oidc(['google'])),
     ]);
-    expect(source, contains('enum AuthApiGetClientProvider implements'));
-    expect(source, contains('enum AuthApiGetOtherClientProvider implements'));
-    expect(source, isNot(contains('Get_client')));
+    expect(source, containsSource('enum AuthApiGetClientProvider implements'));
+    expect(
+      source,
+      containsSource('enum AuthApiGetOtherClientProvider implements'),
+    );
+    expect(source, isNot(containsSource('Get_client')));
   });
 
   test('a member named like the enum yields to it', () {
@@ -488,7 +511,7 @@ void main() {
     ]);
     expect(
       source,
-      contains(r'getClient({required String AuthApiGetClientProvider$})'),
+      containsSource(r'getClient({required String AuthApiGetClientProvider$})'),
     );
   });
 
@@ -497,17 +520,20 @@ void main() {
       _method('oidcAuthApi.getClient', _oidc(['google'])),
       _method('api.getOther', _oidc(['github'])),
     ]);
-    expect(source, contains('class OidcAuthApi {'));
-    expect(source, contains('enum OidcAuthApiGetClientProvider implements'));
+    expect(source, containsSource('class OidcAuthApi {'));
     expect(
       source,
-      contains(
+      containsSource('enum OidcAuthApiGetClientProvider implements'),
+    );
+    expect(
+      source,
+      containsSource(
         'Future<TypedOidcClient<OidcAuthApiGetClientProvider>> getClient()',
       ),
     );
-    expect(source, contains('class Api {'));
-    expect(source, contains('enum ApiGetOtherProvider implements'));
-    expect(source, isNot(contains('ApiApi')));
+    expect(source, containsSource('class Api {'));
+    expect(source, containsSource('enum ApiGetOtherProvider implements'));
+    expect(source, isNot(containsSource('ApiApi')));
     expect(warnings, isEmpty);
   });
 
@@ -526,9 +552,9 @@ void main() {
             (e) => e.message,
             'message',
             allOf(
-              contains("'${names[0]}', '${names[1]}'"),
-              contains('`OidcAuthApi`'),
-              contains('Rename one of these exports'),
+              containsSource("'${names[0]}', '${names[1]}'"),
+              containsSource('`OidcAuthApi`'),
+              containsSource('Rename one of these exports'),
             ),
           ),
         ),
