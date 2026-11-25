@@ -159,6 +159,8 @@ export type ScopeParent = Scope | { id: string };
  * - Scope IDs are joined with '-' into each block's `fullId`, which names its resources. Two scope paths that
  *   join to the same string (`'user-service' > 'sessions'` and `'user' > 'service-sessions'`) share those
  *   resources: constructing the second logs a warning naming both, and a future release will reject it.
+ *   Locally the two read and overwrite each other's data; `cdk synth` fails once both create a resource
+ *   with a name that its service requires to be unique (see the README), because that deploy would fail.
  * - Use lowercase letters, digits and hyphens in scope and block IDs. An ID is part of the name of each
  *   resource under it, unescaped, and every service accepts those characters. The rest depends on the
  *   resource: a DynamoDB table name (`KVStore`, `DistributedTable`) also allows uppercase letters, `_` and
@@ -218,6 +220,8 @@ export class Scope {
    * resolves to the same `fullId` in this process: ids are joined with `-`, so
    * `'user-service' > 'sessions'` and `'user' > 'service-sessions'` collide and
    * would share their resources. A future release will reject this.
+   * Locally the two share their data; `cdk synth` fails once both create a
+   * resource with one name, because that deploy would fail.
    * Constructing the same path again is accepted.
    *
    * The characters of `id` are not checked here: which ones deploy depends on

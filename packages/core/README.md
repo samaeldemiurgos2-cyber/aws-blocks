@@ -33,11 +33,22 @@ see the `@aws-cdk-blocks/bb-compute` README for what follows it.
 A block's resource names (its table, bucket or queue, and its local `.cdk-blocks/local/data`
 directory) come from its `fullId`: the scope ids from the root down, joined with
 `-`. Two different scope paths that join to the same string, such as
-`'user-service' > 'sessions'` and `'user' > 'service-sessions'`, share those
-resources and overwrite each other's data. Constructing the second one logs a
-warning naming both paths (a `blocks:scope:fullIdCollision` warning at `cdk
-synth`); rename one of the scopes. Constructing the same path again is
-accepted.
+`'user-service' > 'sessions'` and `'user' > 'service-sessions'`, get the same
+resource names. Constructing the second one logs a warning naming both paths (a
+`blocks:scope:fullIdCollision` warning at `cdk synth`); rename one of the
+scopes. Constructing the same path again is accepted. What happens next
+depends on where the app runs:
+
+- Locally the two blocks share their `.cdk-blocks/local/data` directory and
+  read and overwrite each other's data.
+- On AWS the two cannot both deploy, because CloudFormation rejects a second
+  table, queue, schedule, bucket, secret, parameter, log group or Lambda
+  function with a name that already exists in the stack. `cdk synth` fails
+  instead, listing the name and the construct paths of the resources that use
+  it. Colliding scopes that create no resource with a name still synth, with
+  the warning. Only names that are literal strings at synth are compared, and
+  a resource behind a CloudFormation `Condition` is skipped, because it may be
+  the only one of its name that deploys.
 
 Use lowercase letters, digits and hyphens in scope and block ids. An id is part
 of the name of each resource created under it, unescaped, and every service

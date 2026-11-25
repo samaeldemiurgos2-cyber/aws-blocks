@@ -119,7 +119,8 @@ export function claimScopeFullId(
 	return (
 		`Scope ${mine} resolves to the fullId '${fullId}', which Scope ${theirs} already uses. ` +
 		"Scope ids are joined with '-', so the two name the same resources (a table, bucket or queue, and " +
-		"the local .cdk-blocks/local/data directory) and read and overwrite each other's data. Rename one of the scopes " +
-		'so their joined ids differ: a future release will reject this.'
+		"the local .cdk-blocks/local/data directory): locally they read and overwrite each other's data, and " +
+		'`cdk synth` fails once both create a resource with one name, because that deploy would fail. Rename one ' +
+		'of the scopes so their joined ids differ: a future release will reject this.'
 	);
 }

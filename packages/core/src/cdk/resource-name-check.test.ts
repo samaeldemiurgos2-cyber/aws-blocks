@@ -11,13 +11,17 @@
  */
 import assert from 'node:assert';
 import { describe, test } from 'node:test';
-import { App, Aws, CfnResource, Stack } from 'aws-cdk-lib';
+import { App, Aws, CfnCondition, CfnResource, Fn, Stack } from 'aws-cdk-lib';
 import { CfnDataSource, CfnKnowledgeBase } from 'aws-cdk-lib/aws-bedrock';
 import { UserPool } from 'aws-cdk-lib/aws-cognito';
-import { AttributeType, Table, TableV2 } from 'aws-cdk-lib/aws-dynamodb';
-import { CfnSchedule } from 'aws-cdk-lib/aws-scheduler';
+import { AttributeType, CfnTable, Table, TableV2 } from 'aws-cdk-lib/aws-dynamodb';
+import { Code, Function as LambdaFunction, Runtime } from 'aws-cdk-lib/aws-lambda';
+import { LogGroup } from 'aws-cdk-lib/aws-logs';
+import { Bucket } from 'aws-cdk-lib/aws-s3';
+import { CfnSchedule, CfnScheduleGroup } from 'aws-cdk-lib/aws-scheduler';
 import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import { Queue } from 'aws-cdk-lib/aws-sqs';
+import { StringParameter } from 'aws-cdk-lib/aws-ssm';
 import type { ScopeParent } from '../common/index.js';
 import { Scope } from './index.js';
 import { BLOCKS_BACKEND_ROOT } from './root-registry.js';
@@ -49,6 +53,13 @@ const RESOURCES = {
 		}),
 	userPool: (block: Scope, name: string) => new UserPool(block, 'pool', { userPoolName: name }),
 	secret: (block: Scope, name: string) => new Secret(block, 'secret', { secretName: name }),
+	lambda: (block: Scope, name: string) =>
+		new LambdaFunction(block, 'fn', {
+			functionName: name,
+			runtime: Runtime.NODEJS_22_X,
+			handler: 'index.handler',
+			code: Code.fromInline('exports.handler = async () => {};'),
+		}),
 	knowledgeBase: (block: Scope, name: string) =>
 		new CfnKnowledgeBase(block, 'KB', {
 			name,
@@ -219,5 +230,172 @@ describe('CDK Scope: an id that a resource name cannot contain fails synth', () 
 		const error = synthOverridden('shop', 'shop/carts');
 		assert.ok(error, 'synth must fail: a bad override on a good id');
 		assert.ok(error.includes("'shop/carts'") && error.includes("'/'"), `names the overridden name: ${error}`);
+	});
+});
+
+describe('CDK Scope: two resources with one physical name fail synth', () => {
+	/** The synth result of a block of `kind` with id 'x' under `kv > 'a-b'` and another under `kv > 'a' > 'b'`. */
+	function synthColliding(kind: ResourceKind): string | undefined {
+		const stack = root();
+		const kv = new Scope('kv', { parent: stack as never });
+		new NamedBlock(new Scope('a-b', { parent: kv }), 'x', kind);
+		new NamedBlock(new Scope('b', { parent: new Scope('a', { parent: kv }) }), 'x', kind);
+		return synthError(stack);
+	}
+
+	test("'a-b' > 'x' and 'a' > 'b' > 'x' fail synth for the table both name 'App-kv-a-b-x'", () => {
+		const error = synthColliding('table');
+		assert.ok(error, 'synth must fail: CloudFormation rejects the second table with the same name');
+		assert.ok(error.includes("DynamoDB table name 'App-kv-a-b-x'"), `names the table: ${error}`);
+		assert.ok(error.includes('App/kv/a-b/x/table') && error.includes('App/kv/a/b/x/table'), `both: ${error}`);
+		assert.ok(error.includes("'-'"), `explains the join: ${error}`);
+	});
+
+	for (const kind of ['globalTable', 'queue', 'fifoQueue', 'schedule', 'secret', 'lambda'] as const) {
+		test(`a ${kind} named twice fails synth`, () => {
+			const error = synthColliding(kind);
+			assert.ok(error, `synth must fail for two ${kind}s with one name`);
+			assert.match(error, /App-kv-a-b-x/);
+		});
+	}
+
+	test('an S3 bucket, a Systems Manager parameter and a log group named twice fail synth', () => {
+		const builders = {
+			bucket: (block: Scope, name: string) => new Bucket(block, 'bucket', { bucketName: name }),
+			parameter: (block: Scope, name: string) =>
+				new StringParameter(block, 'param', { parameterName: `/${name}`, stringValue: 'v' }),
+			logGroup: (block: Scope, name: string) => new LogGroup(block, 'logs', { logGroupName: name }),
+		};
+		for (const [kind, build] of Object.entries(builders)) {
+			const stack = root();
+			build(new Scope('x', { parent: new Scope('a-b', { parent: stack as never }) }), 'app-a-b-x');
+			build(new Scope('b-x', { parent: new Scope('a', { parent: stack as never }) }), 'app-a-b-x');
+			assert.ok(synthError(stack)?.includes('app-a-b-x'), `${kind}: synth must fail`);
+		}
+	});
+
+	test('a table and a queue with one name do not collide: each service has its own names', () => {
+		const stack = root();
+		new NamedBlock(new Scope('a-b', { parent: stack as never }), 'x', 'table');
+		new NamedBlock(new Scope('b', { parent: new Scope('a', { parent: stack as never }) }), 'x', 'queue');
+		assert.strictEqual(synthError(stack), undefined);
+	});
+
+	test('two schedules with one name in different schedule groups do not collide', () => {
+		const stack = root();
+		const first = new NamedBlock(new Scope('a-b', { parent: stack as never }), 'x', 'schedule');
+		const second = new NamedBlock(
+			new Scope('b', { parent: new Scope('a', { parent: stack as never }) }),
+			'x',
+			'schedule',
+		);
+		for (const [block, group] of [
+			[first, 'one'],
+			[second, 'two'],
+		] as const) {
+			const schedule = block.node.findAll().find((c) => c instanceof CfnSchedule);
+			assert.ok(schedule instanceof CfnSchedule);
+			schedule.groupName = group;
+		}
+		assert.strictEqual(synthError(stack), undefined);
+	});
+
+	test('two Cognito user pools with one name synth: Cognito does not require unique pool names', () => {
+		assert.strictEqual(synthColliding('userPool'), undefined);
+	});
+
+	test('colliding scopes that name no resource still synth, with the fullIdCollision warning only', () => {
+		const stack = root();
+		new Scope('x', { parent: new Scope('a-b', { parent: stack as never }) });
+		new Scope('x', { parent: new Scope('b', { parent: new Scope('a', { parent: stack as never }) }) });
+		assert.strictEqual(synthError(stack), undefined);
+	});
+
+	test('one resource per name synths', () => {
+		const stack = root();
+		new NamedBlock(new Scope('a-b', { parent: stack as never }), 'x', 'table');
+		new NamedBlock(new Scope('a', { parent: stack as never }), 'x', 'table');
+		assert.strictEqual(synthError(stack), undefined);
+	});
+
+	test('two tables with one name behind complementary Conditions synth: only one of them deploys', () => {
+		const stack = root();
+		const isProd = new CfnCondition(stack, 'IsProd', { expression: Fn.conditionEquals(Aws.ACCOUNT_ID, '1') });
+		const notProd = new CfnCondition(stack, 'NotProd', { expression: Fn.conditionNot(isProd) });
+		const prod = new NamedBlock(new Scope('a-b', { parent: stack as never }), 'x', 'table');
+		const dev = new NamedBlock(
+			new Scope('b', { parent: new Scope('a', { parent: stack as never }) }),
+			'x',
+			'table',
+		);
+		for (const [block, condition] of [
+			[prod, isProd],
+			[dev, notProd],
+		] as const) {
+			const table = block.node.findAll().find((c) => c instanceof CfnTable);
+			assert.ok(table instanceof CfnTable);
+			table.cfnOptions.condition = condition;
+		}
+		assert.strictEqual(synthError(stack), undefined);
+	});
+
+	test('a secret and a parameter with one name synth: types that share the Name property keep separate names', () => {
+		const stack = root();
+		new Secret(new Scope('s', { parent: stack as never }), 'secret', { secretName: 'shared-name' });
+		new StringParameter(new Scope('p', { parent: stack as never }), 'param', {
+			parameterName: 'shared-name',
+			stringValue: 'v',
+		});
+		assert.strictEqual(synthError(stack), undefined);
+	});
+
+	test('two tables with one name in stacks in different Regions synth: table names are per Region', () => {
+		const stack = root();
+		for (const region of ['us-east-1', 'us-west-2']) {
+			const child = new Stack(stack, `Stack-${region}`, { env: { account: '111122223333', region } });
+			new Table(new Scope('kv', { parent: child as never }), 'table', {
+				tableName: 'shared-table',
+				partitionKey: { name: 'pk', type: AttributeType.STRING },
+			});
+		}
+		assert.strictEqual(synthError(stack), undefined);
+	});
+
+	test('two buckets with one name in stacks in different Regions fail synth: bucket names are global', () => {
+		const stack = root();
+		for (const region of ['us-east-1', 'us-west-2']) {
+			const child = new Stack(stack, `Stack-${region}`, { env: { account: '111122223333', region } });
+			new Bucket(new Scope('files', { parent: child as never }), 'bucket', { bucketName: 'shared-bucket-x' });
+		}
+		const error = synthError(stack);
+		assert.ok(error?.includes("S3 bucket name 'shared-bucket-x'"), `synth must fail: ${error}`);
+	});
+
+	test('two schedules with one name in one group passed by Ref fail synth', () => {
+		const stack = root();
+		const group = new CfnScheduleGroup(stack, 'Group', { name: 'jobs' });
+		const first = new NamedBlock(new Scope('a-b', { parent: stack as never }), 'x', 'schedule');
+		const second = new NamedBlock(
+			new Scope('b', { parent: new Scope('a', { parent: stack as never }) }),
+			'x',
+			'schedule',
+		);
+		for (const block of [first, second]) {
+			const schedule = block.node.findAll().find((c) => c instanceof CfnSchedule);
+			assert.ok(schedule instanceof CfnSchedule);
+			schedule.groupName = group.ref;
+		}
+		assert.match(String(synthError(stack)), /EventBridge Scheduler schedule name 'App-a-b-x'/);
+	});
+
+	test('a name given twice, not from joined ids, gets a hint to rename the resource instead of the scopes', () => {
+		const stack = root();
+		new Queue(new Scope('one', { parent: stack as never }), 'queue', { queueName: 'jobs' });
+		new Queue(new Scope('two', { parent: stack as never }), 'queue', { queueName: 'jobs' });
+		const error = synthError(stack);
+		assert.ok(error, 'synth must fail: two queues named jobs');
+		assert.ok(error.includes("SQS queue name 'jobs'"), `names the queue: ${error}`);
+		assert.ok(error.includes('Give one of them another name'), `hint: ${error}`);
+		assert.ok(!error.includes('joined ids differ'), `does not blame the join: ${error}`);
 	});
 });
