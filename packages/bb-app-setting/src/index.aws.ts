@@ -13,7 +13,7 @@ import type { ScopeParent } from '@aws-cdk-blocks/core';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { AppSettingErrors } from './errors.js';
 import type { AppSettingOptions, InternalAppSettingOptions } from './types.js';
-import { assertSecretValueNotEmpty, assertValueWithinSizeLimit } from './validation.js';
+import { assertSecretValueNotEmpty, assertValueWithinSizeLimit, serializeValue } from './validation.js';
 import { BB_NAME, BB_VERSION } from './version.js';
 import { Logger } from '@aws-cdk-blocks/bb-logger';
 import type { ChildLogger } from '@aws-cdk-blocks/bb-logger';
@@ -159,7 +159,7 @@ export class AppSetting<T = string> extends Scope {
 	 * the value is validated before writing.
 	 *
 	 * @param value - The new value to store.
-	 * @throws {AppSettingErrors.ValidationFailed} If schema validation fails or value exceeds 4 KB.
+	 * @throws {AppSettingErrors.ValidationFailed} If schema validation fails, the value has no JSON representation (e.g. `undefined`, a function, a bigint), or the value exceeds 4 KB.
 	 *   Also if a `secret: true` setting is given an empty string, which `get()` would refuse.
 	 *
 	 * @example
@@ -173,9 +173,10 @@ export class AppSetting<T = string> extends Scope {
 		// get() refuses an empty secret; reject it here, as the mock does.
 		assertSecretValueNotEmpty(value, this.isSecret);
 
-		const serialized = JSON.stringify(value);
-		// Same check, at the same point, as the mock (see validation.ts): an
-		// oversized value fails with ValidationFailed before reaching SSM.
+		// Same checks, at the same points, as the mock (see validation.ts): a value
+		// with no JSON form or an oversized value fails with ValidationFailed
+		// before reaching SSM.
+		const serialized = serializeValue(value);
 		assertValueWithinSizeLimit(serialized, this.isSecret);
 
 		await this.client.send(new PutParameterCommand({

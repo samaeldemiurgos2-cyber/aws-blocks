@@ -71,6 +71,8 @@ When `options.schema` is provided (any `StandardSchemaV1` implementation — Zod
 
 The 4 KB (4096 bytes) size limit applies to the **JSON-encoded** value of non-secret parameters, matching the SSM standard tier. Because `JSON.stringify()` adds overhead (e.g. 2 bytes for string quotes, escaping for special characters), the effective payload capacity is slightly less than 4096 bytes of raw content. Both the mock and the AWS runtime enforce this through the shared `assertValueWithinSizeLimit()` in `src/validation.ts`, which checks `Buffer.byteLength(serialized, 'utf8')` only when `!isSecret`, after schema validation and before the write; the AWS runtime throws `ValidationFailedException` without calling SSM. Secret (`SecureString`) parameters are auto-generated rather than taking a user-supplied value, so neither path size-checks them. Both paths do reject `put('')` on a secret, through the shared `assertSecretValueNotEmpty()` called just before the size check, because `get()` throws `ParameterNotFound` for an empty secret and the write would leave every later read failing. `src/parity.test.ts` runs the same `put()` cases against both paths.
 
+Before the size check, both paths serialize through the shared `serializeValue()` in `src/validation.ts`. A value with no JSON representation (`JSON.stringify()` returns `undefined` for `undefined`, functions and symbols, and throws for bigints and circular objects) throws `ValidationFailedException` with a fixed message, for secret and non-secret settings alike, so nothing is written and no raw `TypeError` reaches the caller.
+
 ## Mock Implementation
 
 - Values share `.cdk-blocks/local/data/settings.json`, keyed by the setting's `fullId`.
@@ -79,6 +81,7 @@ The 4 KB (4096 bytes) size limit applies to the **JSON-encoded** value of non-se
 - `put()` writes the value to disk immediately.
 - Schema validation on `put()` when configured, throws `ValidationFailedException`.
 - Validates 4 KB serialized value size limit for non-secret parameters.
+- Rejects values with no JSON representation with `ValidationFailedException`.
 - `secret: true` behaves identically to non-secret (no encryption locally); `kmsKeyArn` is ignored in the mock.
 
 ### Mock vs AWS Behavior Differences

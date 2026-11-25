@@ -10,7 +10,12 @@ import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { AppSettingErrors } from './errors.js';
 import type { AppSettingOptions, InternalAppSettingOptions } from './types.js';
-import { assertSecretValueNotEmpty, assertValueWithinSizeLimit, validateAppSettingOptions } from './validation.js';
+import {
+	assertSecretValueNotEmpty,
+	assertValueWithinSizeLimit,
+	serializeValue,
+	validateAppSettingOptions,
+} from './validation.js';
 import { Logger } from '@aws-cdk-blocks/bb-logger';
 import type { ChildLogger } from '@aws-cdk-blocks/bb-logger';
 import { BB_NAME, BB_VERSION } from './version.js';
@@ -165,7 +170,7 @@ export class AppSetting<T = string> extends Scope {
 	 * configured, the value is validated before writing.
 	 *
 	 * @param value - The new value to store.
-	 * @throws {AppSettingErrors.ValidationFailed} If schema validation fails or value exceeds 4 KB.
+	 * @throws {AppSettingErrors.ValidationFailed} If schema validation fails, the value has no JSON representation (e.g. `undefined`, a function, a bigint), or the value exceeds 4 KB.
 	 *   Also if a `secret: true` setting is given an empty string, which `get()` would refuse.
 	 *
 	 * @example
@@ -178,7 +183,7 @@ export class AppSetting<T = string> extends Scope {
 		await validateSchema(this.schema, value);
 		assertSecretValueNotEmpty(value, this.isSecret);
 
-		const serialized = JSON.stringify(value);
+		const serialized = serializeValue(value);
 		assertValueWithinSizeLimit(serialized, this.isSecret);
 
 		const settings = readSettings(this);

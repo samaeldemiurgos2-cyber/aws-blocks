@@ -121,6 +121,44 @@ export function assertSecretValueNotEmpty(value: unknown, isSecret: boolean): vo
 export const MAX_VALUE_BYTES = 4096;
 
 /**
+ * Serialize a value for storage, rejecting values with no JSON representation.
+ *
+ * `put()` stores `JSON.stringify(value)`. For `undefined`, a function or a
+ * symbol that returns `undefined` (nothing to store), and for a bigint or a
+ * circular object it throws a raw `TypeError`. Both cases become
+ * {@link AppSettingErrors.ValidationFailed} here, with a fixed message so no
+ * engine-specific text reaches the client. That text can quote the value's
+ * key names (a circular `TypeError` names the closing property), so it is
+ * kept only as the error's non-enumerable `cause`, for server-side logs.
+ *
+ * Shared by the mock and AWS `put()` paths and called at the same point in
+ * both (after schema validation, before the size check), for secret and
+ * non-secret settings alike.
+ */
+export function serializeValue(value: unknown): string {
+	let serialized: string | undefined;
+	let cause: unknown;
+	try {
+		serialized = JSON.stringify(value);
+	} catch (e) {
+		serialized = undefined;
+		cause = e;
+	}
+	if (serialized === undefined) {
+		const name = AppSettingErrors.ValidationFailed;
+		// `new Error(message, { cause })` defines `cause` as non-enumerable, so
+		// the RPC serializer does not send it to the client.
+		const error = new Error(
+			`${name}: Value of type ${typeof value} cannot be stored: it has no JSON representation`,
+			cause === undefined ? undefined : { cause },
+		);
+		error.name = name;
+		throw brandBlocksError(error);
+	}
+	return serialized;
+}
+
+/**
  * Reject a serialized value that exceeds the SSM standard-tier 4 KB limit.
  *
  * Shared by the mock and AWS `put()` paths and called at the same point in
