@@ -98,7 +98,7 @@ chunking: { strategy: 'fixed', chunkSize: 500, chunkOverlap: 10 }
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `maxResults` | `number` | `10` | Maximum results to return. An integer; a value outside 1–100 is clamped to that range. |
-| `filter` | `MetadataFilter` | — | Metadata filter with AND semantics across all key-value pairs. |
+| `filter` | `MetadataFilter` | — | Metadata filter with AND semantics across all key-value pairs. Omit it to search everything; `null`, `{}` or a malformed condition throws `ValidationError`. |
 
 ### Retrieve Result
 
@@ -160,8 +160,8 @@ import { isBlocksError, KnowledgeBaseErrors } from 'aws-cdk-blocks';
 | `KnowledgeBaseErrors.IngestionFailed` | `IngestionFailedException` | The most recent ingestion job failed. Thrown by `isSynced()` and `waitUntilSynced()` |
 | `KnowledgeBaseErrors.Timeout` | `KnowledgeBaseTimeoutException` | `waitUntilSynced()` exceeded its timeout before ingestion completed |
 | `KnowledgeBaseErrors.InvalidSource` | `InvalidSourceConfigException` | Source folder not found or invalid config |
-| `KnowledgeBaseErrors.InvalidFilter` | `InvalidFilterException` | Invalid filter keys in Bedrock query |
-| `KnowledgeBaseErrors.ValidationError` | `KnowledgeBaseValidationError` | Empty or invalid query, or a non-integer `maxResults` |
+| `KnowledgeBaseErrors.InvalidFilter` | `InvalidFilterException` | Bedrock rejected a well-formed filter, for example an unknown key (AWS only) |
+| `KnowledgeBaseErrors.ValidationError` | `KnowledgeBaseValidationError` | Empty or invalid query, a non-integer `maxResults`, or a malformed `filter` (see [Metadata Filtering](#metadata-filtering)) |
 | `KnowledgeBaseErrors.BrowserNotSupported` | `BrowserNotSupportedException` | Used in a browser context — KnowledgeBase is server-side only |
 
 An `IngestionFailed` error keeps Bedrock's failure reasons on the server:
@@ -190,6 +190,8 @@ const results = await kb.retrieve('pricing', {
 ```
 
 Subfolder paths automatically populate the `folder` metadata key. For example, a file at `./knowledge/faq/billing.md` gets `metadata.folder = 'faq'`.
+
+A document that has no value for a filtered key never matches. To search everything, omit `filter`. Any other value must narrow the search, so `retrieve()` throws `ValidationError` before searching, locally and on AWS, when `filter` is `null` or `{}`, when a key has no condition object, when a condition uses an operator other than `equals`, or when `equals` is missing, not a string, or empty.
 
 ## Use as an Agent tool
 
@@ -273,7 +275,7 @@ In local dev mode, KnowledgeBase reads documents from the source folder, splits 
 - Scoring uses TF-IDF (keyword-based) rather than real embeddings. Scores are relative within the mock and won't match production Bedrock scores exactly.
 - The TF-IDF tokenizer is Unicode-aware: accents are normalized (so `resume` matches `résumé`) and CJK text is matched via character bigrams.
 - Chunking is approximated locally: `'fixed'` uses word-count windows of `chunkSize` words that overlap by `chunkSize × chunkOverlap / 100` words, `'none'` keeps each document whole, and `'semantic'` (and `'hierarchical'`) split on paragraph boundaries.
-- `maxResults` and metadata filtering (`equals`, AND) behave as on AWS, except for an unknown filter key: Bedrock can reject it with `InvalidFilterException`; the mock matches nothing and returns `[]`.
+- `maxResults` and metadata filtering (`equals`, AND) behave as on AWS, including the `ValidationError` for a malformed filter, except for an unknown filter key: Bedrock can reject it with `InvalidFilterException`; the mock matches nothing and returns `[]`.
 - `source` must be a relative path inside the project directory — absolute paths and paths that escape the project (via `..`) are rejected with `InvalidSourceConfigException`.
 
 Wipe cached data with `rm -rf .cdk-blocks/local/data .bb-data`.

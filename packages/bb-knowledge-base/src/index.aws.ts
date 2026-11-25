@@ -29,6 +29,7 @@ import type {
 import { blocksError, KnowledgeBaseErrors } from './errors.js';
 import { createAgentTool } from './agent-tool.js';
 import { normalizeMaxResults } from './normalize.js';
+import { validateRetrieveFilter } from './validation.js';
 import { BB_NAME, BB_VERSION } from './version.js';
 import { Logger } from '@aws-cdk-blocks/bb-logger';
 import type { ChildLogger } from '@aws-cdk-blocks/bb-logger';
@@ -330,6 +331,10 @@ export class KnowledgeBase extends Scope {
 	 * @param {RetrieveOptions} options - Optional retrieval parameters (maxResults, filter).
 	 * @returns Chunks ranked by relevance score (highest first). Empty array if no matches.
 	 * @throws {KnowledgeBaseValidationError} If query is empty or whitespace-only, or `maxResults` is a non-integer.
+	 * @throws {KnowledgeBaseValidationError} If `filter` is given but is not a valid `MetadataFilter`:
+	 *   `null`, `{}`, a key with no condition object, an unsupported operator, or an `equals` that is
+	 *   missing, not a string or empty. Checked before Bedrock is called. Omit `filter` (or pass
+	 *   `undefined`) to search everything.
 	 * @throws {KnowledgeBaseNotReadyException} If the KB has not been created/deployed.
 	 * @throws {InvalidFilterException} If the filter keys are invalid for the Bedrock query.
 	 * @throws {RetrievalFailedException} For other Bedrock retrieval errors (network, service).
@@ -349,7 +354,9 @@ export class KnowledgeBase extends Scope {
 
 		// 1–100 results stays well within Lambda's 6 MB response payload.
 		const maxResults = normalizeMaxResults(options?.maxResults);
-		const filter = buildFilter(options?.filter);
+		// Same check, at the same point, as the mock: reject a malformed filter before Bedrock
+		// sees it, instead of sending no filter (`null`, `{}`) or `{ equals: { key } }` with no value.
+		const filter = buildFilter(validateRetrieveFilter(options?.filter));
 		const knowledgeBaseId = this.ensureKbId();
 
 		try {

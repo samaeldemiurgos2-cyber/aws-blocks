@@ -12,6 +12,7 @@ import type {
 	RetrieveOptions,
 	RetrieveResult,
 } from './types.js';
+import { metadataFilterProblem } from './validation.js';
 
 /** Default results per agent search: enough context without flooding the model. */
 const DEFAULT_AGENT_TOOL_MAX_RESULTS = 5;
@@ -31,13 +32,9 @@ function checkScope(scope: unknown): MetadataFilter | undefined {
 				'return undefined to search the whole knowledge base, or throw to fail the call.',
 		);
 	};
-	if (scope === null || typeof scope !== 'object' || Array.isArray(scope)) return fail(`returned ${scope === null ? 'null' : typeof scope}`);
-	const entries = Object.entries(scope);
-	if (entries.length === 0) return fail('returned an empty filter');
-	for (const [key, condition] of entries) {
-		const equals: unknown = condition !== null && typeof condition === 'object' ? (condition as { equals?: unknown }).equals : undefined;
-		if (typeof equals !== 'string' || equals.length === 0) return fail(`returned no non-empty string \`equals\` for "${key}"`);
-	}
+	// Same shape rules as `retrieve()` (validation.ts), with a message that names the callback.
+	const problem = metadataFilterProblem(scope);
+	if (problem !== undefined) return fail(`returned a filter that ${problem}`);
 	return scope as MetadataFilter;
 }
 

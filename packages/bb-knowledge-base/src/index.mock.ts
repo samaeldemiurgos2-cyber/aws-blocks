@@ -13,6 +13,7 @@ import { createAgentTool } from './agent-tool.js';
 import { blocksError, KnowledgeBaseErrors } from './errors.js';
 import { normalizeMaxResults } from './normalize.js';
 import { buildIndex, search, type TfIdfIndex } from './tfidf.js';
+import { validateRetrieveFilter } from './validation.js';
 import type {
 	ChunkingStrategy,
 	KnowledgeBaseAgentTool,
@@ -132,6 +133,10 @@ function parseSidecarMetadata(sidecarPath: string): Record<string, string> | und
 
 function matchesFilter(metadata: Record<string, string>, filter: MetadataFilter): boolean {
 	for (const [key, condition] of Object.entries(filter)) {
+		// Fail closed: a document that lacks the key never matches a condition on it, even if
+		// `equals` were somehow undefined (validateRetrieveFilter already rejects that), and an
+		// inherited property such as `constructor` never counts as metadata.
+		if (!Object.hasOwn(metadata, key) || typeof condition.equals !== 'string') return false;
 		if (metadata[key] !== condition.equals) return false;
 	}
 	return true;
@@ -216,6 +221,9 @@ export class KnowledgeBase extends Scope {
 	 * @param options - Optional retrieval parameters (maxResults, filter).
 	 * @returns Chunks ranked by relevance score (highest first). Empty array if no matches.
 	 * @throws {KnowledgeBaseValidationError} If query is empty or whitespace-only, or `maxResults` is a non-integer.
+	 * @throws {KnowledgeBaseValidationError} If `filter` is given but is not a valid `MetadataFilter`:
+	 *   `null`, `{}`, a key with no condition object, an unsupported operator, or an `equals` that is
+	 *   missing, not a string or empty. Omit `filter` (or pass `undefined`) to search everything.
 	 * @throws {InvalidSourceConfigException} If the source folder does not exist or is not a string path.
 	 *
 	 * @example
@@ -235,7 +243,8 @@ export class KnowledgeBase extends Scope {
 		}
 
 		const maxResults = normalizeMaxResults(options?.maxResults);
-		const filter = options?.filter;
+		// Same check, at the same point, as the AWS entry: only an omitted filter is unfiltered.
+		const filter = validateRetrieveFilter(options?.filter);
 
 		await this.ensureLoaded();
 		// ensureLoaded() populates both fields or throws; copy into locals so the

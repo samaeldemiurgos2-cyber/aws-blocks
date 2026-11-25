@@ -401,6 +401,50 @@ describe('retrieve (SDK-mocked)', () => {
 			cleanup();
 		}
 	});
+
+	// Before validation, `null` and `{}` were sent as an unfiltered search and a
+	// condition without `equals` reached Bedrock as `{ value: undefined }`.
+	test('rejects a null, empty or malformed filter with ValidationError before calling Bedrock', async () => {
+		const cleanup = setKbEnv('TEST', 'R12');
+		let sent = 0;
+		mockRuntimeSend(() => {
+			sent++;
+			return { retrievalResults: [] };
+		});
+
+		try {
+			const kb = new KnowledgeBase({ id: 'test' }, 'r12', { source: './knowledge' });
+			const bad: unknown[] = [null, {}, { folder: {} }, { folder: { equals: undefined } }, { folder: { contains: 'x' } }];
+			for (const filter of bad) {
+				await assert.rejects(
+					() => kb.retrieve('query', { filter: filter as never }),
+					(err: unknown) => isBlocksError(err, KnowledgeBaseErrors.ValidationError),
+					`expected a ValidationError for ${JSON.stringify(filter)}`,
+				);
+			}
+			assert.strictEqual(sent, 0, 'no RetrieveCommand should be sent for an invalid filter');
+		} finally {
+			cleanup();
+		}
+	});
+
+	test('an undefined filter sends no filter to Bedrock', async () => {
+		const cleanup = setKbEnv('TEST', 'R13');
+		let config: { filter?: unknown } | undefined;
+		mockRuntimeSend((cmd: any) => {
+			config = cmd.input.retrievalConfiguration.vectorSearchConfiguration;
+			return { retrievalResults: [] };
+		});
+
+		try {
+			const kb = new KnowledgeBase({ id: 'test' }, 'r13', { source: './knowledge' });
+			await kb.retrieve('query', { filter: undefined });
+			assert.ok(config, 'RetrieveCommand should be sent');
+			assert.strictEqual('filter' in config, false);
+		} finally {
+			cleanup();
+		}
+	});
 });
 
 // ── Error classification — ValidationException ─────────────────────────────

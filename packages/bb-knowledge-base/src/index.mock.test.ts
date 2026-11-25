@@ -195,6 +195,50 @@ test('non-existent filter value returns empty array', async () => {
 	assert.strictEqual(results.length, 0);
 });
 
+test('a filter on a key no document has matches nothing', async () => {
+	const kb = new KnowledgeBase({ id: 'test' }, 'kb', { source: 'test-knowledge-tmp' });
+	const results = await kb.retrieve('password billing guide deployment', {
+		filter: { nokey: { equals: 'x' } },
+	});
+
+	assert.strictEqual(results.length, 0);
+});
+
+test('an omitted or undefined filter runs an unfiltered search', async () => {
+	const kb = new KnowledgeBase({ id: 'test' }, 'kb', { source: 'test-knowledge-tmp' });
+	const unfiltered = await kb.retrieve('password billing guide deployment', { maxResults: 100 });
+	const withUndefined = await kb.retrieve('password billing guide deployment', { maxResults: 100, filter: undefined });
+
+	assert.ok(unfiltered.length > 0);
+	assert.deepStrictEqual(withUndefined, unfiltered);
+});
+
+// `null`, `{}` and conditions without a usable `equals` would otherwise widen the
+// search (an unfiltered search, or a match on every document that lacks the key).
+test('a null, empty or malformed filter is rejected with ValidationError instead of widening the search', async () => {
+	const kb = new KnowledgeBase({ id: 'test' }, 'kb', { source: 'test-knowledge-tmp' });
+	const bad: unknown[] = [
+		null,
+		{},
+		[],
+		{ folder: {} },
+		{ nokey: {} },
+		{ folder: { equals: undefined } },
+		{ folder: { equals: '' } },
+		{ folder: { contains: 'faq' } },
+		{ folder: { equals: 'faq', notEquals: 'guides' } },
+		{ folder: 'faq' },
+		{ folder: null },
+	];
+	for (const filter of bad) {
+		await assert.rejects(
+			kb.retrieve('password billing guide deployment', { filter: filter as never }),
+			(err: unknown) => isBlocksError(err, KnowledgeBaseErrors.ValidationError),
+			`expected a ValidationError for ${JSON.stringify(filter)}`,
+		);
+	}
+});
+
 // ── RetrieveResult shape ───────────────────────────────────────────────────
 
 test('RetrieveResult has all required fields with correct types', async () => {

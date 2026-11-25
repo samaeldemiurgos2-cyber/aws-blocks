@@ -128,7 +128,7 @@ Creates the following resources:
 - Relevance scoring via TF-IDF (term frequency–inverse document frequency) — not real embeddings. Algorithm: tokenize → normalized TF → smoothed IDF (`log((N+1)/(df+1)) + 1`) → scores normalized to [0, 1].
 - Chunks cached to `.cdk-blocks/local/data/{fullId}/chunks.json` via `getMockDataDir()` from core. Data persists across dev server restarts. Wipe with `rm -rf .cdk-blocks/local/data .bb-data`.
 - Folder metadata derived from directory structure (top-level subfolder name). Customer-provided `.metadata.json` sidecar files take precedence.
-- Metadata filtering via in-memory equality check with AND semantics.
+- Metadata filtering via in-memory equality check with AND semantics. A chunk that lacks a filtered key never matches. The filter's shape is checked first by `validateRetrieveFilter()` in `src/validation.ts`, which the AWS entry and `asAgentTool()` share, so a malformed filter fails with `KnowledgeBaseValidationError` on both runtimes.
 - Supported formats: `.md`, `.txt`, `.html`, `.htm`, `.csv`, `.json`.
 - S3 URI sources throw `InvalidSourceConfigException` — they require AWS infrastructure not available locally.
 

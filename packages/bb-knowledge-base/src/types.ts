@@ -138,7 +138,14 @@ export interface RetrieveOptions {
 	 * since Bedrock requires an integer here. Default: 10.
 	 */
 	maxResults?: number;
-	/** Metadata filter with AND semantics across all key-value pairs. Only chunks whose metadata matches every condition are returned. */
+	/**
+	 * Metadata filter with AND semantics across all key-value pairs. Only chunks whose metadata matches every condition are returned.
+	 *
+	 * Omit it (or pass `undefined`) to search the whole knowledge base. Any other value must narrow
+	 * the search: `null`, `{}`, a key without a condition object, an operator other than `equals`,
+	 * or an `equals` that is missing, not a string or empty is rejected with
+	 * `KnowledgeBaseErrors.ValidationError` before any search runs, on both runtimes.
+	 */
 	filter?: MetadataFilter;
 }
 
@@ -173,9 +180,10 @@ export interface KnowledgeBaseAgentToolOptions<TContext> {
 	 *
 	 * Return `undefined` to search the whole knowledge base. That choice is explicit on purpose:
 	 * pass `filter: () => undefined` only when every caller may read every document. Any other
-	 * result must narrow the search: `null`, an empty object, or a key whose `equals` is missing
-	 * or an empty string fails the tool call with `KnowledgeBaseErrors.ValidationError` instead
-	 * of running a wider search.
+	 * result must narrow the search: `null`, an empty object, an empty key, a key without a
+	 * condition object, an operator other than `equals`, or a key whose `equals` is missing,
+	 * not a string or an empty string fails the tool call with
+	 * `KnowledgeBaseErrors.ValidationError` instead of running a wider search.
 	 *
 	 * Throw (for example when the session carries no tenant) to fail the tool call rather than
 	 * run an unscoped search. May be async.

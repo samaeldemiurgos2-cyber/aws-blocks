@@ -24,9 +24,9 @@ export const KnowledgeBaseErrors = {
 	NotReady: 'KnowledgeBaseNotReadyException',
 	/** Source folder not found, or source config is invalid for the current runtime. */
 	InvalidSource: 'InvalidSourceConfigException',
-	/** Invalid metadata filter keys or structure in the Bedrock query. */
+	/** Invalid metadata filter keys or structure in the Bedrock query. Raised when Bedrock rejects a well-formed filter (for example an unknown key); a malformed filter shape fails earlier, on both runtimes, with `ValidationError`. */
 	InvalidFilter: 'InvalidFilterException',
-	/** Query validation error (e.g., empty or whitespace-only query string). */
+	/** Query validation error (e.g., empty or whitespace-only query string, a non-integer `maxResults`, or a `filter` that is `null`, `{}` or has a condition without a non-empty string `equals`). */
 	ValidationError: 'KnowledgeBaseValidationError',
 	/** KnowledgeBase is server-side only and cannot be used in browser contexts. */
 	BrowserNotSupported: 'BrowserNotSupportedException',
