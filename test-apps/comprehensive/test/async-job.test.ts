@@ -150,6 +150,23 @@ export function asyncJobTests(getApi: () => typeof apiType) {
       );
     });
 
+    test('AsyncJob - submit with a payload JSON cannot encode throws ValidationFailed', async () => {
+      const api = getApi();
+      // A bigint has no JSON form; the client must get the named error, not a nameless 500.
+      await assert.rejects(
+        () => api.asyncJobSubmitBigint('b1'),
+        (e: unknown) => isBlocksError(e, AsyncJobErrors.ValidationFailed)
+      );
+    });
+
+    test('AsyncJob - submitBatch with a payload JSON cannot encode throws ValidationFailed', async () => {
+      const api = getApi();
+      await assert.rejects(
+        () => api.asyncJobSubmitBatchBigint('b2'),
+        (e: unknown) => isBlocksError(e, AsyncJobErrors.ValidationFailed)
+      );
+    });
+
     // delaySeconds Tests
     test('AsyncJob - out-of-range or fractional delaySeconds throws ValidationFailed over RPC', async () => {
       const api = getApi();

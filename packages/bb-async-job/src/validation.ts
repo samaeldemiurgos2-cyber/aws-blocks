@@ -33,3 +33,45 @@ export function validateDelaySeconds(delaySeconds: number | undefined): void {
 		);
 	}
 }
+
+/**
+ * Serialize a job payload to the JSON string sent as the message body.
+ *
+ * `JSON.stringify` either throws (a bigint anywhere in the value, a circular
+ * reference, a throwing `toJSON`) or returns `undefined` (a top-level
+ * `undefined`, function or symbol, or a `toJSON` that returns one) for values
+ * JSON cannot encode. Left alone, both end in a raw `TypeError` that reaches an
+ * RPC client as a nameless 500; this turns them into a named, branded
+ * `ValidationFailed` error before anything is queued. Nested `undefined` and
+ * function values are dropped by `JSON.stringify` as usual and stay accepted.
+ *
+ * @returns The serialized payload.
+ * @throws {AsyncJobErrors.ValidationFailed} If the payload cannot be encoded as JSON.
+ */
+export function serializePayload(payload: unknown): string {
+	let serialized: string | undefined;
+	try {
+		serialized = JSON.stringify(payload);
+	} catch (err) {
+		// A branded error's message crosses the RPC wire, so it is a stable string
+		// rather than the caught message (which a caller's toJSON() could fill with
+		// anything). The original error stays reachable server-side on a
+		// non-enumerable `cause`, which the RPC serializer does not emit.
+		const error = blocksError(
+			AsyncJobErrors.ValidationFailed,
+			'Payload is not JSON-serializable: it contains a bigint, a circular reference, or a toJSON() that throws',
+		);
+		Object.defineProperty(error, 'cause', { value: err, enumerable: false, writable: true, configurable: true });
+		throw error;
+	}
+	if (serialized === undefined) {
+		throw blocksError(
+			AsyncJobErrors.ValidationFailed,
+			// Only a toJSON() that returns undefined gets an object here.
+			typeof payload === 'object'
+				? 'Payload is not JSON-serializable: its toJSON() returned undefined'
+				: `Payload is not JSON-serializable: a value of type ${typeof payload} has no JSON representation`,
+		);
+	}
+	return serialized;
+}

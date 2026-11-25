@@ -673,6 +673,14 @@ const validatedJob = new AsyncJob(scope, 'validated-job', {
   },
 });
 
+// AsyncJob whose payload type allows a bigint, which JSON cannot encode: submit()
+// must reject it with a named ValidationFailed error, not a raw TypeError (500).
+// The handler never runs. A dedicated job on purpose: it shows that a payload type
+// the compiler accepts still fails at runtime, without casting into testJob.
+const bigintJob = new AsyncJob(scope, 'bigint-job', {
+  handler: async (_payload: { id: string; count: bigint }) => {},
+});
+
 // AsyncJob with trackStatus - exercises the status table (DynamoDB when deployed).
 // The handler settles immediately on purpose: the transition history is what makes
 // the intermediate `processing` state observable, so there is no delay to widen it.
@@ -2693,6 +2701,16 @@ export const api = new ApiNamespace(scope, 'api', (context) => ({
 
   async asyncJobSubmitValidatedBatch(items: { to: string; subject: string; body: string }[]) {
     const { jobIds } = await validatedJob.submitBatch(items);
+    return { jobIds };
+  },
+
+  async asyncJobSubmitBigint(id: string) {
+    const { jobId } = await bigintJob.submit({ id, count: 1n });
+    return { jobId };
+  },
+
+  async asyncJobSubmitBatchBigint(id: string) {
+    const { jobIds } = await bigintJob.submitBatch([{ id, count: 1n }]);
     return { jobIds };
   },
 

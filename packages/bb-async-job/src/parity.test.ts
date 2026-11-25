@@ -4,8 +4,8 @@
 /**
  * Mock↔AWS parity for `AsyncJob.submit()` / `submitBatch()` input validation.
  *
- * Each case runs the same `delaySeconds` through the local mock and through the
- * AWS runtime with the SQS client stubbed, and asserts both reach the same
+ * Each case runs the same `delaySeconds` or payload through the local mock and
+ * through the AWS runtime with the SQS client stubbed, and asserts both reach the same
  * outcome: the same named `AsyncJobErrors` error (and message), or success. For
  * success cases the captured SQS command input is asserted too, so a stub that
  * rejects every command cannot make a case pass vacuously; for rejected cases
@@ -42,12 +42,13 @@ type Payload = { n: number; pad?: string };
 interface SentInput {
 	QueueUrl?: string;
 	DelaySeconds?: number;
-	Entries?: Array<{ Id: string; DelaySeconds?: number }>;
+	MessageBody?: string;
+	Entries?: Array<{ Id: string; DelaySeconds?: number; MessageBody?: string }>;
 }
 
 /** An AWS-runtime AsyncJob whose SQS client records every command and succeeds. */
-function makeAwsJob() {
-	const job = new AwsAsyncJob<Payload>(new Scope('app'), uniqueId(), { handler: async () => {} });
+function makeAwsJob<T = Payload>() {
+	const job = new AwsAsyncJob<T>(new Scope('app'), uniqueId(), { handler: async () => {} });
 	registerSdkIdentifiers(job.fullId, { queueUrl: QUEUE_URL });
 	const inputs: SentInput[] = [];
 	// Test plumbing: swap the private SDK client for a recording stub.
@@ -66,8 +67,8 @@ function makeAwsJob() {
 	return { job, inputs };
 }
 
-function makeMockJob() {
-	return new MockAsyncJob<Payload>(new Scope('app'), uniqueId(), { handler: async () => {} });
+function makeMockJob<T = Payload>() {
+	return new MockAsyncJob<T>(new Scope('app'), uniqueId(), { handler: async () => {} });
 }
 
 interface Case {
@@ -189,5 +190,155 @@ describe('AsyncJob.submitBatch() checks delaySeconds before the payloads on mock
 		assert.ok(!mockOutcome.ok && mockOutcome.message.includes('delaySeconds'), 'the delay error should win');
 		assert.deepStrictEqual(inputs, [], 'nothing should reach SQS');
 		assert.strictEqual(mockJob._queue.totalSubmitted, 0, 'the mock should queue nothing');
+	});
+});
+
+interface PayloadCase {
+	label: string;
+	payload: () => unknown;
+	/** `null` = success (with the expected message body); otherwise the expected `AsyncJobErrors` name. */
+	error: string | null;
+	/** Expected SQS `MessageBody` on success. */
+	body?: string;
+}
+
+/**
+ * A cycle closed by a key named `apiKey`. The engine's error names the closing
+ * property, so a message that quoted it would contain `apiKey`.
+ */
+function circular(): unknown {
+	const o: { apiKey?: unknown } = {};
+	o.apiKey = o;
+	return o;
+}
+
+// The payload travels as a JSON message body. A value JSON cannot encode either
+// makes JSON.stringify throw (bigint, a cycle) or return undefined (undefined, a
+// function, a symbol); both must surface as ValidationFailed, not a raw TypeError.
+// Nested undefined / function values are dropped by JSON.stringify and stay accepted.
+const payloadCases: PayloadCase[] = [
+	{ label: 'a plain object', payload: () => ({ n: 1 }), error: null, body: '{"n":1}' },
+	{ label: 'null', payload: () => null, error: null, body: 'null' },
+	{ label: 'a string', payload: () => 'hi', error: null, body: '"hi"' },
+	{ label: 'a nested undefined (dropped)', payload: () => ({ a: 1, b: undefined }), error: null, body: '{"a":1}' },
+	{ label: 'a nested function (dropped)', payload: () => ({ a: 1, f: () => 1 }), error: null, body: '{"a":1}' },
+	{ label: 'undefined', payload: () => undefined, error: AsyncJobErrors.ValidationFailed },
+	{ label: 'a function', payload: () => () => 1, error: AsyncJobErrors.ValidationFailed },
+	{ label: 'a symbol', payload: () => Symbol('s'), error: AsyncJobErrors.ValidationFailed },
+	{ label: 'a bigint', payload: () => 1n, error: AsyncJobErrors.ValidationFailed },
+	{ label: 'a nested bigint', payload: () => ({ n: 1n }), error: AsyncJobErrors.ValidationFailed },
+	{ label: 'a circular object', payload: circular, error: AsyncJobErrors.ValidationFailed },
+	{
+		label: 'a toJSON that returns undefined',
+		payload: () => ({ toJSON: () => undefined }),
+		error: AsyncJobErrors.ValidationFailed,
+	},
+	{
+		label: 'a toJSON that throws',
+		payload: () => ({
+			toJSON() {
+				throw new Error('token=s3cret');
+			},
+		}),
+		error: AsyncJobErrors.ValidationFailed,
+	},
+];
+
+function assertSamePayloadOutcome(mockOut: Outcome, awsOut: Outcome, expected: string | null): void {
+	assert.deepStrictEqual(awsOut, mockOut, 'mock and AWS outcomes differ');
+	if (expected === null) {
+		assert.deepStrictEqual(mockOut, { ok: true });
+	} else {
+		assert.strictEqual(mockOut.ok, false);
+		if (!mockOut.ok) {
+			assert.strictEqual(mockOut.name, expected);
+			// Branded, so the name survives the RPC boundary instead of collapsing to a nameless 500.
+			assert.strictEqual(mockOut.wireSafe, true);
+			// The branded message crosses the wire, so it must be fixed text: never the
+			// engine's error (which names the key closing a cycle) or a toJSON()'s own text.
+			assert.ok(!mockOut.message.includes('s3cret'), `message quotes toJSON(): ${mockOut.message}`);
+			assert.ok(!mockOut.message.includes('apiKey'), `message quotes a key: ${mockOut.message}`);
+		}
+	}
+}
+
+describe('AsyncJob.submit() rejects a payload JSON cannot encode the same way on mock and AWS', () => {
+	for (const c of payloadCases) {
+		test(c.label, async () => {
+			const mockJob = makeMockJob<unknown>();
+			const { job: awsJob, inputs } = makeAwsJob<unknown>();
+			const mockOutcome = await outcomeOf(() => mockJob.submit(c.payload()));
+			const awsOutcome = await outcomeOf(() => awsJob.submit(c.payload()));
+			assertSamePayloadOutcome(mockOutcome, awsOutcome, c.error);
+			if (c.error === null) {
+				assert.deepStrictEqual(
+					inputs.map((i) => ({ QueueUrl: i.QueueUrl, MessageBody: i.MessageBody })),
+					[{ QueueUrl: QUEUE_URL, MessageBody: c.body }],
+				);
+				assert.strictEqual(mockJob._queue.totalSubmitted, 1);
+			} else {
+				assert.deepStrictEqual(inputs, [], 'nothing should reach SQS');
+				assert.strictEqual(mockJob._queue.totalSubmitted, 0, 'the mock should queue nothing');
+			}
+		});
+	}
+});
+
+describe('AsyncJob.submitBatch() rejects a payload JSON cannot encode the same way on mock and AWS', () => {
+	for (const c of payloadCases) {
+		// One bad payload after a good one fails the whole call before anything is sent.
+		test(`a good payload then ${c.label}`, async () => {
+			const mockJob = makeMockJob<unknown>();
+			const { job: awsJob, inputs } = makeAwsJob<unknown>();
+			const mockOutcome = await outcomeOf(() => mockJob.submitBatch([{ ok: true }, c.payload()]));
+			const awsOutcome = await outcomeOf(() => awsJob.submitBatch([{ ok: true }, c.payload()]));
+			assertSamePayloadOutcome(mockOutcome, awsOutcome, c.error);
+			if (c.error === null) {
+				assert.deepStrictEqual(
+					inputs.map((i) => i.Entries?.map((e) => e.MessageBody)),
+					[['{"ok":true}', c.body]],
+				);
+				assert.strictEqual(mockJob._queue.totalSubmitted, 2);
+			} else {
+				assert.deepStrictEqual(inputs, [], 'nothing should reach SQS');
+				assert.strictEqual(mockJob._queue.totalSubmitted, 0, 'the mock should queue nothing');
+			}
+		});
+	}
+});
+
+describe('the mock handler gets the JSON round-trip of the payload, as the AWS handler does', () => {
+	// The AWS handler receives JSON.parse(record.body), so the mock must not hand
+	// over the live object: values JSON changes have to arrive changed locally too.
+	test('a Date, a Map, NaN and a nested undefined arrive as JSON would carry them', async () => {
+		let resolveSeen: (p: unknown) => void = () => {};
+		const seen = new Promise<unknown>((r) => {
+			resolveSeen = r;
+		});
+		const job = new MockAsyncJob<unknown>(new Scope('app'), uniqueId(), {
+			handler: async (p) => {
+				resolveSeen(p);
+			},
+		});
+		const payload = { d: new Date(0), m: new Map([['k', 1]]), x: Number.NaN, u: undefined, n: { a: 1 } };
+		await job.submit(payload);
+		assert.deepStrictEqual(await seen, JSON.parse(JSON.stringify(payload)));
+		assert.deepStrictEqual(await seen, { d: '1970-01-01T00:00:00.000Z', m: {}, x: null, n: { a: 1 } });
+	});
+
+	test('the handler gets a copy, so mutating the payload after submit() does not reach it', async () => {
+		let resolveSeen: (p: unknown) => void = () => {};
+		const seen = new Promise<unknown>((r) => {
+			resolveSeen = r;
+		});
+		const job = new MockAsyncJob<{ n: number }>(new Scope('app'), uniqueId(), {
+			handler: async (p) => {
+				resolveSeen(p);
+			},
+		});
+		const payload = { n: 1 };
+		await job.submit(payload);
+		payload.n = 2;
+		assert.deepStrictEqual(await seen, { n: 1 });
 	});
 });

@@ -22,7 +22,7 @@ import type {
 } from './types.js';
 import { AsyncJobErrors, BatchSubmitFailedError } from './errors.js';
 import { JobStatusTracker, statusNotTrackedError } from './status.js';
-import { validateDelaySeconds } from './validation.js';
+import { serializePayload, validateDelaySeconds } from './validation.js';
 import { BB_NAME, BB_VERSION } from './version.js';
 import { Logger } from '@aws-cdk-blocks/bb-logger';
 import type { ChildLogger } from '@aws-cdk-blocks/bb-logger';
@@ -431,7 +431,8 @@ export class AsyncJob<T = unknown> extends Scope {
 			}
 		}
 
-		const serialized = JSON.stringify(payload);
+		// Throws ValidationFailed for a value JSON cannot encode (shared with the mock).
+		const serialized = serializePayload(payload);
 		const bytes = Buffer.byteLength(serialized, 'utf8');
 		if (bytes > MAX_PAYLOAD_BYTES) {
 			const kb = Math.ceil(bytes / 1024);
