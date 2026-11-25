@@ -250,17 +250,33 @@ async function getRevokedAt(principal: string | undefined, options?: { consisten
 	return record?.revokedAt;
 }
 
-/** Tell a client its subscription ended and why. A connection that is already gone is ignored. */
-async function notifySubscriptionEnded(callbackUrl: string, connectionId: string, channel: string, failure: SubscriptionAuthFailure): Promise<void> {
+function isGone(err: any): boolean {
+	return err instanceof GoneException || err?.statusCode === 410 || err?.$metadata?.httpStatusCode === 410;
+}
+
+/**
+ * Send a reply to the connection that sent the message. A client can disconnect
+ * while its message is in flight; API Gateway then answers with GoneException (410).
+ * There is no one left to reply to and `$disconnect` cleans up its records, so that
+ * case is ignored. Any other error still fails the invocation.
+ */
+async function replyToConnection(callbackUrl: string, connectionId: string, reply: Record<string, unknown>): Promise<void> {
 	try {
 		await getApigw(callbackUrl).send(new PostToConnectionCommand({
 			ConnectionId: connectionId,
-			Data: JSON.stringify({ type: 'error', channel, code: failure, message: subscriptionEndedMessage(failure) }),
+			Data: JSON.stringify(reply),
 		}));
+	} catch (err) {
+		if (!isGone(err)) throw err;
+	}
+}
+
+/** Tell a client its subscription ended and why. A connection that is already gone is ignored. */
+async function notifySubscriptionEnded(callbackUrl: string, connectionId: string, channel: string, failure: SubscriptionAuthFailure): Promise<void> {
+	try {
+		await replyToConnection(callbackUrl, connectionId, { type: 'error', channel, code: failure, message: subscriptionEndedMessage(failure) });
 	} catch (err: any) {
-		if (!(err instanceof GoneException || err?.statusCode === 410)) {
-			console.warn(`[Realtime] could not notify connection ${connectionId}: ${err?.message ?? err}`);
-		}
+		console.warn(`[Realtime] could not notify connection ${connectionId}: ${err?.message ?? err}`);
 	}
 }
 
@@ -305,10 +321,7 @@ async function handleWebSocketEvent(event: any): Promise<any> {
 
 	if ((msg.action === 'subscribe' || msg.action === 'unsubscribe') && !isClientChannelPath(msg.channel)) {
 		if (msg.action === 'subscribe') {
-			await getApigw(callbackUrl).send(new PostToConnectionCommand({
-				ConnectionId: connectionId,
-				Data: JSON.stringify({ type: 'error', message: 'Invalid channel' }),
-			}));
+			await replyToConnection(callbackUrl, connectionId, { type: 'error', message: 'Invalid channel' });
 		}
 		return { statusCode: 200 };
 	}
@@ -316,10 +329,7 @@ async function handleWebSocketEvent(event: any): Promise<any> {
 	if (msg.action === 'subscribe' && isClientChannelPath(msg.channel)) {
 		if (typeof msg.token !== 'string' || !msg.token) {
 			// Same reply as the local WebSocket server (ws-server.ts).
-			await getApigw(callbackUrl).send(new PostToConnectionCommand({
-				ConnectionId: connectionId,
-				Data: JSON.stringify({ type: 'error', channel: msg.channel, message: 'Unauthorized: missing token' }),
-			}));
+			await replyToConnection(callbackUrl, connectionId, { type: 'error', channel: msg.channel, message: 'Unauthorized: missing token' });
 			return { statusCode: 200 };
 		}
 		const secret = await getTokenSecret();
@@ -329,10 +339,7 @@ async function handleWebSocketEvent(event: any): Promise<any> {
 		const sentinel = await table.get({ connectionId, channel: SENTINEL_SK }, { consistentRead: true });
 		const valid = sentinel ? validateChannelToken(msg.token, secret, msg.channel, { principal: sentinel.principal }) : null;
 		if (!valid) {
-			await getApigw(callbackUrl).send(new PostToConnectionCommand({
-				ConnectionId: connectionId,
-				Data: JSON.stringify({ type: 'error', channel: msg.channel, message: 'Unauthorized: invalid or expired token' }),
-			}));
+			await replyToConnection(callbackUrl, connectionId, { type: 'error', channel: msg.channel, message: 'Unauthorized: invalid or expired token' });
 			return { statusCode: 200 };
 		}
 		const revokedAt = await getRevokedAt(valid.sub, { consistentRead: true });
@@ -346,10 +353,7 @@ async function handleWebSocketEvent(event: any): Promise<any> {
 			tokenExp: valid.exp, tokenIat: valid.iat, tokenId: valid.jti,
 			...(valid.sub === undefined ? {} : { principal: valid.sub }),
 		});
-		await getApigw(callbackUrl).send(new PostToConnectionCommand({
-			ConnectionId: connectionId,
-			Data: JSON.stringify({ type: 'subscribe_success', channel: msg.channel }),
-		}));
+		await replyToConnection(callbackUrl, connectionId, { type: 'subscribe_success', channel: msg.channel });
 	} else if (msg.action === 'unsubscribe' && isClientChannelPath(msg.channel)) {
 		await table.delete({ connectionId, channel: msg.channel });
 	} else if (msg.action === 'ping') {
