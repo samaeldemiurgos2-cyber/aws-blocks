@@ -940,6 +940,8 @@ export class AuthBase<const O extends AuthOptions = AuthOptions> extends Scope i
 	 * validated and does not run it again — see {@link AuthCommonOptions.validateUser}.)
 	 *
 	 * @throws {ApiError} 409 `UsernameExistsException` for an existing user (server-side callers are inside the trust boundary).
+	 * @throws {ApiError} 400 `InvalidParameterException` for a username Cognito refuses (empty, over 128 characters, or
+	 *   with whitespace or control characters) or a password over 256 characters; no user is created.
 	 * @throws {ApiError} 409 `EmailPasswordNotEnabledException` when email + password is disabled (untyped callers).
 	 */
 	async signUp(

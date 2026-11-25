@@ -17,6 +17,7 @@
  */
 
 import type { AdminUserFilter } from '../types.js';
+import { enforcePasswordLength } from './cognito-input-constraints.js';
 import type { MockStore, MockUserRecord } from './native-mock-store.js';
 import type { NativeAdminEngine, NativeAdminUser } from './types.js';
 
@@ -116,7 +117,10 @@ export function mockAdminEngine(
 		},
 		async createUser(login, init) {
 			// Cognito validates `TemporaryPassword` before the username.
-			if (init.temporaryPassword !== undefined) store.enforcePasswordFormat(init.temporaryPassword);
+			if (init.temporaryPassword !== undefined) {
+				store.enforcePasswordFormat(init.temporaryPassword);
+				enforcePasswordLength(init.temporaryPassword, 'temporaryPassword');
+			}
 			const { username, userSub, attributes } = newUser(
 				login,
 				{ ...init.attributes },
@@ -173,6 +177,7 @@ export function mockAdminEngine(
 		async setUserPassword(login, password, options) {
 			// Cognito validates `Password` before it looks the user up.
 			store.enforcePasswordFormat(password);
+			enforcePasswordLength(password);
 			const { user } = store.requireResolved(login);
 			store.enforcePasswordPolicy(password);
 			user.password = password;

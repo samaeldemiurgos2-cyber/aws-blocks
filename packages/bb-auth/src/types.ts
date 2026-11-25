@@ -2928,6 +2928,8 @@ export interface LifecycleAdmin<O extends AuthOptions = AuthOptions> {
 	 * new password on first sign-in (`CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED`).
 	 *
 	 * @throws {ApiError} 409 `UsernameExistsException` when the username is taken.
+	 * @throws {ApiError} 400 `InvalidParameterException` for a username Cognito refuses (empty, over 128 characters, or
+	 *   with whitespace or control characters) or a `temporaryPassword` over 256 characters.
 	 * @throws {ApiError} 400 `AliasExistsException` when `attributes` marks an email / phone verified that is already
 	 *   another user's verified sign-in alias (`signInWith` with `'username'`).
 	 */
