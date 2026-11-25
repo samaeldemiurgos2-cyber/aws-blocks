@@ -114,8 +114,9 @@ Match an error by name with `isBlocksError`. See the catch in [Rewrite a store o
 - has an empty string in a key field or an indexed field
 - has a key or indexed field over DynamoDB's size limit (2,048 bytes for a partition key, 1,024 for a sort key)
 - nests lists or maps more than 32 levels deep
+- holds data that the AWS SDK cannot send to DynamoDB, at any depth: `NaN`, an infinite number, a number outside `Number.MIN_SAFE_INTEGER` to `Number.MAX_SAFE_INTEGER`, a `Date`, a symbol, a class instance (including a subclass of `Set` or `Map`), an empty `Set`, a `Set` of values other than numbers, strings or binary data, or an object with a field named `constructor`. The message names the field.
 
-It is also thrown for a bad expiry.
+It is also thrown for a bad expiry, for a number key field outside `Number.MIN_SAFE_INTEGER` to `Number.MAX_SAFE_INTEGER`, and for an `ifValueEquals` or `ifFieldEquals` operand that holds such data.
 
 `InvalidQueryException` is thrown for:
 
@@ -194,6 +195,8 @@ const todo = await todos.get({ userId: 'alice', todoId: '001' });
 ```
 
 The block stores each top-level field of an object value as one DynamoDB attribute. Field names that start with `_bkv_` belong to the block, and `put` rejects a value that has one. `put` also rejects a value that has a field named `__proto__`, at any depth, because DynamoDB cannot store that field name. An item can hold up to 400 KB.
+
+DynamoDB has one number type, so a `bigint` is stored as a number. One within the safe integer range, such as `10n`, reads back as the number `10`. On AWS, a `bigint` outside that range reads back as a `bigint`. The local mock cannot store one yet: its `put` throws a `TypeError`. A `Map` reads back as an object.
 
 ## Expiry
 

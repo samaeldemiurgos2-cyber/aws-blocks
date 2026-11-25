@@ -72,7 +72,14 @@ export function resolveTtlEpochSeconds(options?: Expiry): number | undefined {
 		if (typeof ttlSeconds !== 'number' || !Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
 			invalidTtl(`put: \`ttlSeconds\` must be a finite number greater than 0 (received ${String(ttlSeconds)})`);
 		}
-		return nowEpochSeconds() + Math.ceil(ttlSeconds);
+		const resolved = nowEpochSeconds() + Math.ceil(ttlSeconds);
+		// The DocumentClient refuses a number above Number.MAX_SAFE_INTEGER with a plain Error.
+		if (!Number.isSafeInteger(resolved)) {
+			invalidTtl(
+				`put: \`ttlSeconds\` is too large: the expiry it gives is above Number.MAX_SAFE_INTEGER seconds (received ${String(ttlSeconds)})`,
+			);
+		}
+		return resolved;
 	}
 
 	if (expiresAt instanceof Date) {
@@ -80,7 +87,7 @@ export function resolveTtlEpochSeconds(options?: Expiry): number | undefined {
 		if (!Number.isFinite(ms)) invalidTtl('put: `expiresAt` is an Invalid Date');
 		return Math.floor(ms / 1000);
 	}
-	if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) {
+	if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt) || expiresAt < Number.MIN_SAFE_INTEGER) {
 		invalidTtl(`put: \`expiresAt\` must be a Date or a Unix epoch time in seconds (received ${String(expiresAt)})`);
 	}
 	if (expiresAt >= MAX_PLAUSIBLE_EPOCH_SECONDS) {
