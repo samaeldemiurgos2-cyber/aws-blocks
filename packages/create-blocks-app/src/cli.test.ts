@@ -1057,7 +1057,7 @@ describe('create-blocks-app auto-detection', () => {
       assert.strictEqual(result.exitCode, 1, result.stdout);
       assert.match(result.stderr, /SvelteKit 3 is not supported yet/);
       assert.ok(result.stderr.includes('@sveltejs/kit@^2 @sveltejs/adapter-node@^5 @sveltejs/vite-plugin-svelte@^5 vite@^6'), result.stderr);
-      assert.ok(result.stderr.includes('https://github.com/aws/cdk-blocks/issues/984'), result.stderr);
+      assert.match(result.stderr, /^SvelteKit 3 support is tracked in https:\/\/github\.com\/aws\/cdk-blocks\/issues\/984\. /m, result.stderr);
       assert.match(result.stderr, /Nothing was written/);
       assert.strictEqual(readFileSync(join(tmpDir, 'package.json'), 'utf-8'), pkg);
       assert.deepStrictEqual(readdirSync(tmpDir), ['package.json'], 'nothing is written');

@@ -139,11 +139,22 @@ describe("upstreamRegistryUrl", () => {
 		assert.equal(upstreamRegistryUrl("/registry/zod"), `${UPSTREAM_REGISTRY}/zod`);
 	});
 
-	it("forwards a third-party scoped package with its encoding intact", () => {
+	it("forwards a third-party scoped package as one encoded segment", () => {
 		assert.equal(
 			upstreamRegistryUrl("/registry/@types%2fnode"),
-			`${UPSTREAM_REGISTRY}/@types%2fnode`,
+			`${UPSTREAM_REGISTRY}/%40types%2Fnode`,
 		);
+	});
+
+	it("forwards a third-party scoped tarball with the name as one segment", () => {
+		assert.equal(
+			upstreamRegistryUrl("/registry/@types%2fnode/-/node-22.0.0.tgz"),
+			`${UPSTREAM_REGISTRY}/%40types%2Fnode/-/node-22.0.0.tgz`,
+		);
+	});
+
+	it("drops a query string from a forwarded request", () => {
+		assert.equal(upstreamRegistryUrl("/registry/zod?write=true"), `${UPSTREAM_REGISTRY}/zod`);
 	});
 
 	it("forwards a third-party tarball", () => {
@@ -161,6 +172,7 @@ describe("upstreamRegistryUrl", () => {
 		["a scoped tarball", "/registry/@aws-cdk-blocks/core/-/core-0.1.0.tgz"],
 		["the unscoped umbrella", "/registry/aws-cdk-blocks"],
 		["the unscoped umbrella's tarball", "/registry/aws-cdk-blocks/-/aws-cdk-blocks-0.1.0.tgz"],
+		["the unscoped umbrella with a query string", "/registry/aws-cdk-blocks?x"],
 	] as const) {
 		it(`never forwards this repo's own packages: ${label}`, () => {
 			assert.equal(upstreamRegistryUrl(url), undefined);

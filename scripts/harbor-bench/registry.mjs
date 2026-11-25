@@ -65,8 +65,30 @@ createServer(async (request, response) => {
 		response.writeHead(404).end();
 		return;
 	}
+	// Re-encode each path segment, so the forwarded path is the package path npm asked for and
+	// nothing in it is read as URL structure. `@types%2fnode` goes out as `%40types%2Fnode`,
+	// which the registry treats the same. Any query string is dropped: npm's install GETs do not
+	// send one. Same encoding as scripts/publish/local-registry.ts. The path comes from the
+	// normalised pathname, the same string the candidate and `..` checks above read, so a `\` or
+	// dot segment cannot make the fetched path differ from the checked one.
+	const pathname = new URL(request.url, 'http://localhost').pathname;
+	if (!pathname.startsWith('/registry/')) {
+		response.writeHead(404).end();
+		return;
+	}
+	let path;
 	try {
-		const upstream = await fetch(`${UPSTREAM}/${rawPath}`);
+		path = pathname
+			.slice('/registry/'.length)
+			.split('/')
+			.map((segment) => encodeURIComponent(decodeURIComponent(segment)))
+			.join('/');
+	} catch {
+		response.writeHead(404).end();
+		return;
+	}
+	try {
+		const upstream = await fetch(`${UPSTREAM}/${path}`);
 		// Read the body before writeHead: a mid-body disconnect rejects here, and calling
 		// writeHead(502) after the head is already sent throws ERR_HTTP_HEADERS_SENT inside
 		// the catch. Unhandled, that takes the registry down and the rest of the trial's

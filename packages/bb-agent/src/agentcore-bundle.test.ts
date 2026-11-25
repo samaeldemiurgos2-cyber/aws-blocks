@@ -15,7 +15,15 @@ import assert from 'node:assert';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { bundleAgentCoreAsset } from './agentcore-bundle.js';
+import { bundleAgentCoreAsset, toJsStringLiteral } from './agentcore-bundle.js';
+
+test('toJsStringLiteral escapes script and line terminators and decodes to the same string', () => {
+	const value = '/tmp/a"b\\c/</script>\u2028\u2029\n';
+	const literal = toJsStringLiteral(value);
+	assert.doesNotMatch(literal, /[<>/\u2028\u2029]/, literal);
+	// Every escape used is valid JSON too, so JSON.parse reads the literal back exactly.
+	assert.strictEqual(JSON.parse(literal), value);
+});
 
 test('bundleAgentCoreAsset co-bundles a backend into a CJS AgentCore asset', () => {
 	const workDir = mkdtempSync(join(tmpdir(), 'bb-agent-bundle-'));

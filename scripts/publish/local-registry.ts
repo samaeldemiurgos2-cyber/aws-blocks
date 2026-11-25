@@ -105,7 +105,9 @@ export function upstreamRegistryUrl(rawUrl: string): string | undefined {
 	if (!rawUrl.startsWith(REGISTRY_PATH_PREFIX)) {
 		return undefined;
 	}
-	const raw = rawUrl.slice(REGISTRY_PATH_PREFIX.length);
+	// The query string is dropped here, before the candidate check, so the check
+	// and the forwarded URL read the same name. npm's install GETs do not send one.
+	const raw = rawUrl.slice(REGISTRY_PATH_PREFIX.length).split("?")[0];
 
 	let name: string;
 	try {
@@ -146,6 +148,13 @@ export function upstreamRegistryUrl(rawUrl: string): string | undefined {
 		return undefined;
 	}
 
-	// Forwarded exactly as npm spelled it, so a scoped name keeps its %2f.
-	return `${UPSTREAM_REGISTRY}/${raw}`;
+	// Re-encode each path segment, so the forwarded path is the package path npm
+	// asked for and nothing in it is read as URL structure. A scoped name npm
+	// sends as `@types%2fnode` is forwarded as `%40types%2Fnode`, which the
+	// registry treats the same.
+	const path = raw
+		.split("/")
+		.map((segment) => encodeURIComponent(decodeURIComponent(segment)))
+		.join("/");
+	return `${UPSTREAM_REGISTRY}/${path}`;
 }
