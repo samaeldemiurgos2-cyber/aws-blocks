@@ -7,6 +7,7 @@
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { createHmac, randomBytes } from 'node:crypto';
+import type { EventEmitter } from 'node:events';
 import { constantTimeEquals } from '@aws-cdk-blocks/core/bb-utils';
 import { RealtimeErrors } from './errors.js';
 
@@ -141,6 +142,24 @@ export function validatePublishSize(fullChannel: string, data: unknown): void {
 	if (byteLength > MAX_MESSAGE_BYTES) {
 		throw blocksError(RealtimeErrors.ValidationFailed,
 			`Published message exceeds WebSocket message limit of 128 KiB (${byteLength}/${MAX_MESSAGE_BYTES} bytes); send a smaller payload or split it across multiple publishes`);
+	}
+}
+
+/**
+ * Deliver a published message to each in-process listener as its own copy.
+ *
+ * A WebSocket subscriber parses its own copy of the JSON frame, so a handler that
+ * mutates its message can't affect other handlers or the publisher. In-process
+ * delivery must match: `EventEmitter.emit` would hand every listener the same
+ * object. Each listener gets a JSON round trip of `data`, the form it would have
+ * after the wire (a `Date` becomes a string, `undefined` properties drop out).
+ * A top-level value JSON can't encode (e.g. `undefined`) arrives as `undefined`,
+ * as it does on the wire, where the envelope omits `data`.
+ */
+export function emitCopies(emitter: EventEmitter, channel: string, data: unknown): void {
+	const json = JSON.stringify(data);
+	for (const listener of emitter.listeners(channel)) {
+		listener(json === undefined ? undefined : JSON.parse(json));
 	}
 }
 

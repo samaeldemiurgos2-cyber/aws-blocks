@@ -72,6 +72,41 @@ describe('Realtime', () => {
 		assert.deepStrictEqual(received[0], { value: 42 });
 	});
 
+	it('should give each server-side subscriber its own copy of a published message', async () => {
+		const rt = new Realtime(mockScope, 'copy', {
+			namespaces: { events: Realtime.namespace(testSchema<{ tags: string[] }>()) },
+		});
+		const seen: unknown[] = [];
+
+		rt.subscribe('events', 'ch', (msg) => {
+			seen.push(structuredClone(msg));
+			(msg as { tags: string[] }).tags.push('first');
+		});
+		rt.subscribe('events', 'ch', (msg) => { seen.push(structuredClone(msg)); });
+		const channel = await rt.getChannel('events', 'ch');
+		channel.subscribe((msg) => { seen.push(structuredClone(msg)); });
+
+		const published = { tags: ['a'] };
+		await rt.publish('events', 'ch', published);
+
+		// A mutation in one handler must not reach the next handler or the publisher.
+		assert.deepStrictEqual(seen, [{ tags: ['a'] }, { tags: ['a'] }, { tags: ['a'] }]);
+		assert.deepStrictEqual(published, { tags: ['a'] });
+	});
+
+	it('should deliver the JSON wire form of a published message, as on AWS', async () => {
+		const rt = new Realtime(mockScope, 'wire', {
+			namespaces: { events: Realtime.namespace(testSchema()) },
+		});
+		const received: unknown[] = [];
+
+		rt.subscribe('events', 'ch', (msg) => received.push(msg));
+		await rt.publish('events', 'ch', { at: new Date(0), skip: undefined });
+		await rt.publish('events', 'ch', undefined);
+
+		assert.deepStrictEqual(received, [{ at: '1970-01-01T00:00:00.000Z' }, undefined]);
+	});
+
 	it('should isolate channels within a namespace', async () => {
 		const rt = new Realtime(mockScope, 'iso-sub', {
 			namespaces: { events: Realtime.namespace(testSchema()) },

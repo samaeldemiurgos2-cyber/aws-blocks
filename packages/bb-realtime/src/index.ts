@@ -26,7 +26,7 @@ import type {
 	SubscribeOptions,
 } from './types.js';
 import { RealtimeErrors } from './errors.js';
-import { blocksError, validateSchema, mintChannelToken, mintConnectToken, validateChannelPath, validateChannelName, resolveChannelTokenScope, validatePublishSize, validatePrincipal, validateRevokePrincipal } from './utils.js';
+import { blocksError, emitCopies, validateSchema, mintChannelToken, mintConnectToken, validateChannelPath, validateChannelName, resolveChannelTokenScope, validatePublishSize, validatePrincipal, validateRevokePrincipal } from './utils.js';
 import { getBroadcastBus, LOCAL_TOKEN_SECRET, revokePrincipal } from './local-dev.js';
 import { Logger } from '@aws-cdk-blocks/bb-logger';
 import type { ChildLogger } from '@aws-cdk-blocks/bb-logger';
@@ -139,7 +139,8 @@ export const Realtime: {
 		const fullChannel = `${ns.prefix}/${channel}`;
 		validateChannelPath(fullChannel);
 		validatePublishSize(fullChannel, data);
-		globalEmitter.emit(fullChannel, data);
+		// Each subscriber gets its own JSON copy, as it would from the WebSocket on AWS.
+		emitCopies(globalEmitter, fullChannel, data);
 		if (getBroadcastBus()) {
 			getBroadcastBus()!.emit('broadcast', { channel: fullChannel, data });
 		}

@@ -177,6 +177,28 @@ describe('WebSocket handler: subscribe', () => {
 	}
 });
 
+describe('Realtime (AWS runtime): same-process subscribers', () => {
+	it('each get their own copy of a published message, in its wire form', async () => {
+		const seen: unknown[] = [];
+		const unsubscribeFirst = rt.subscribe('chat', 'copies', (msg) => {
+			seen.push(structuredClone(msg));
+			(msg as { tags: string[] }).tags.push('first');
+		});
+		const unsubscribeSecond = rt.subscribe('chat', 'copies', (msg) => { seen.push(structuredClone(msg)); });
+		const published = { tags: ['a'], at: new Date(0) };
+		try {
+			await rt.publish('chat', 'copies', published);
+		} finally {
+			unsubscribeFirst();
+			unsubscribeSecond();
+		}
+
+		const wire = { tags: ['a'], at: '1970-01-01T00:00:00.000Z' };
+		assert.deepStrictEqual(seen, [wire, wire]);
+		assert.deepStrictEqual(published, { tags: ['a'], at: new Date(0) });
+	});
+});
+
 describe('WebSocket handler: channel token scope', () => {
 	it('an exact token subscribes to its own channel', async () => {
 		const { connectionId, descriptor } = await connected('room-a', { scope: 'exact' });

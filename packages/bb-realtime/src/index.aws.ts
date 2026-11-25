@@ -41,7 +41,7 @@ import type {
 } from './types.js';
 import { RealtimeErrors } from './errors.js';
 import { localListener, serverSubscribe, type ServerSubscription } from './server-subscribe.js';
-import { blocksError, validateSchema, mintChannelToken, mintConnectToken, validateChannelToken, validateChannelPath, validateChannelName, resolveChannelTokenScope, validatePublishSize, validatePrincipal, validateRevokePrincipal, isClientChannelPath } from './utils.js';
+import { blocksError, emitCopies, validateSchema, mintChannelToken, mintConnectToken, validateChannelToken, validateChannelPath, validateChannelName, resolveChannelTokenScope, validatePublishSize, validatePrincipal, validateRevokePrincipal, isClientChannelPath } from './utils.js';
 import { checkSubscriptionAuth, subscriptionEndedMessage, REVOCATION_RETENTION_SECONDS } from './subscription-auth.js';
 import type { SubscriptionAuthFailure } from './subscription-auth.js';
 
@@ -506,7 +506,8 @@ export const Realtime: {
 			}
 		}));
 
-		this._localEmitter.emit(fullChannel, data);
+		// Same-process subscribers get their own JSON copy, like the socket delivers.
+		emitCopies(this._localEmitter, fullChannel, data);
 	}
 
 	subscribe(namespace: string, channel: string, handler: (message: unknown) => void): () => void {
