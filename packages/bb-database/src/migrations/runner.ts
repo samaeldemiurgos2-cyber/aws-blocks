@@ -31,6 +31,7 @@ import {
 	pgErrorCode,
 	sqlStateOf,
 } from '../errors.js';
+import { sortMigrationNames } from './order.js';
 import type { FilePlan, MigrationPlan, StatementStep, WaitJobStep } from './plan.js';
 
 interface RunPlanOptions {
@@ -542,9 +543,7 @@ export async function runMigrationPlan(
 
 /** The names of the migration files of `dir`, in the order they run. */
 export function listMigrationFiles(dir: string): string[] {
-	return readdirSync(dir)
-		.filter((f) => f.endsWith('.sql'))
-		.sort();
+	return sortMigrationNames(readdirSync(dir).filter((f) => f.endsWith('.sql')));
 }
 
 export function loadMigrationFiles(dir: string): Record<string, string> {

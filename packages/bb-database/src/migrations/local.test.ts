@@ -62,3 +62,24 @@ describe('a schema that DistributedDatabase migrated', () => {
 		assert.deepStrictEqual(await prepareLocalSchema(engine, inner, options), []);
 	});
 });
+
+describe('the order migration files run in', () => {
+	test('numbered files without zero padding run by their number: 1, 2, then 10', async () => {
+		const inner = sharedPgliteCluster(join(DATA_DIR, 'unpadded', 'pglite'), 'aurora').forSchema('public');
+		const engine = new RulesEngine(inner, 'aurora');
+		// `10_add_b.sql` alters the table that `1_create.sql` makes, so it fails if it runs first.
+		const migrationsPath = migrations({
+			'1_create.sql': 'CREATE TABLE t (id INT PRIMARY KEY);',
+			'2_add_a.sql': 'ALTER TABLE t ADD COLUMN a TEXT;',
+			'10_add_b.sql': 'ALTER TABLE t ADD COLUMN b TEXT;',
+		});
+		const options = { kind: 'aurora' as const, schemaName: 'public', migrationsPath, log: () => {} };
+
+		assert.deepStrictEqual(await prepareLocalSchema(engine, inner, options), [
+			'1_create.sql',
+			'2_add_a.sql',
+			'10_add_b.sql',
+		]);
+		await engine.execute("INSERT INTO t (id, a, b) VALUES (1, 'a', 'b')");
+	});
+});

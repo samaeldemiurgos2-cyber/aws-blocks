@@ -362,7 +362,7 @@ An app that deployed `Database` of `@aws-blocks/bb-data` has an Aurora PostgreSQ
 
 ## Migrations
 
-Each block has one directory of `.sql` files, `./cdk-blocks/migrations/{id}` unless `migrationsPath` says otherwise. Files run in name order, once each:
+Each block has one directory of `.sql` files, `./cdk-blocks/migrations/{id}` unless `migrationsPath` says otherwise. Files run once each, in name order with numbers compared by value, so `2_orders.sql` runs before `10_audit.sql` with or without zero padding:
 
 ```
 cdk-blocks/migrations/

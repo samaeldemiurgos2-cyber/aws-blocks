@@ -22,6 +22,7 @@ import {
 import { externalEngine } from '../external/engine.js';
 import { localConnectionSetting } from '../external/local-store.js';
 import { readSsmConnectionString } from '../external/ssm-store.js';
+import { sortMigrationNames } from '../migrations/order.js';
 import { buildMigrationPlan, connectionRole } from '../migrations/plan.js';
 import {
 	ledgerStatus,
@@ -379,7 +380,7 @@ export interface MarkAppliedResult {
 export async function markApplied(flags: MarkAppliedFlags): Promise<MarkAppliedResult> {
 	checkName(flags.name);
 	const known = listMigrationFiles(migrationsDir(flags.dir));
-	const files = [...new Set(flags.files)].sort();
+	const files = sortMigrationNames(new Set(flags.files));
 	const unknown = files.filter((file) => !known.includes(file));
 	if (unknown.length > 0) {
 		throw usageError(

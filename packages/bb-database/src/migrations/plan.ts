@@ -9,6 +9,7 @@ import { type AsyncDdlTarget, asyncDdlTarget } from '../dialect/async-ddl.js';
 import { ASYNC_DDL, findStatementIssues, inspectStatement, stripLiteralsAndComments } from '../dialect/validation.js';
 import { MIGRATION_VALIDATION_ERROR_NAME } from '../errors.js';
 import type { ClusterKind } from '../types.js';
+import { sortMigrationNames } from './order.js';
 
 export interface StatementStep {
 	kind: 'statement';
@@ -136,7 +137,7 @@ export function lintMigrationFiles(migrations: Record<string, string>, kind: Clu
 	// cannot be changed, and PostgreSQL reports what it refuses with the statement in the message.
 	if (kind === 'external') return;
 	const errors: string[] = [];
-	for (const file of Object.keys(migrations).sort()) {
+	for (const file of sortMigrationNames(Object.keys(migrations))) {
 		const text = withAppRole(migrations[file], APP_ROLE_STAND_IN);
 		if (kind === 'dsql') {
 			for (const issue of findStatementIssues(text)) {
@@ -172,16 +173,15 @@ export function buildMigrationPlan(
 	appRole?: string,
 ): MigrationPlan {
 	const sequence = kind === 'dsql' ? sequenceStatement : transactionalStatement;
-	const files: FilePlan[] = Object.keys(migrations)
-		.sort()
-		.map((file) => ({
-			file,
-			hash: createHash('sha256').update(migrations[file]).digest('hex'),
-			// The file is split first: the splitter does not read quoted identifiers, so a `'` or a `;` in the
-			// role's name must not pass through it.
-			steps: splitStatements(migrations[file])
-				.map((statement) => (appRole === undefined ? statement : withAppRole(statement, appRole)))
-				.flatMap(sequence),
-		}));
+	// Files run by the number in their names, so `2_add.sql` runs before `10_add.sql` (see compareMigrationNames).
+	const files: FilePlan[] = sortMigrationNames(Object.keys(migrations)).map((file) => ({
+		file,
+		hash: createHash('sha256').update(migrations[file]).digest('hex'),
+		// The file is split first: the splitter does not read quoted identifiers, so a `'` or a `;` in the
+		// role's name must not pass through it.
+		steps: splitStatements(migrations[file])
+			.map((statement) => (appRole === undefined ? statement : withAppRole(statement, appRole)))
+			.flatMap(sequence),
+	}));
 	return { kind, files };
 }

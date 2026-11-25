@@ -39,6 +39,8 @@ export const REMOVAL_POLICY_MAP = {
 
 export function hashMigrations(files: Record<string, string>): string {
 	const hash = createHash('sha256');
+	// Sorted only so the hash is stable; this is not the run order (see compareMigrationNames). Changing it would
+	// change the hash of every existing app's migrations.
 	for (const file of Object.keys(files).sort()) {
 		hash.update(file);
 		hash.update(files[file]);
