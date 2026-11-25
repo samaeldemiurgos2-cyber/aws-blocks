@@ -1503,8 +1503,18 @@ alarm and its own encrypted SNS topic. There is no opt-out.
   `us-east-1`.
 - With the region resolved and the account unresolved, only the CloudFront
   alarm is skipped, with a synth warning. All other alarms are kept.
-- A stack with an unresolved region creates the alarm locally and warns that
-  it never fires if the app deploys outside `us-east-1`.
+- A stack with no `env` is environment-agnostic: its region is unresolved at
+  synth. The alarm is then created in the hosting stack, where it works only
+  if the stack is deployed to `us-east-1`. The CDK CLI deploys such a stack to
+  the region it exports as `CDK_DEFAULT_REGION`, so synth reports
+  `@aws-cdk-blocks/hosting:CloudFrontAlarmRegionUnresolved` as:
+  - an info when that region is `us-east-1`. The alarm works there. It never
+    fires if the same synthesized app is deployed to another region later.
+  - a warning when it is any other region. The alarm never fires.
+  - a warning when the variable is unset (a synth outside the CDK CLI). The
+    region is unknown.
+
+  In all three cases the fix is `env: { account, region }` on the stack.
 - In `us-east-1` the alarm stays in the hosting stack.
 
 Subscribe with endpoint subscriptions (`EmailSubscription` /
@@ -1527,6 +1537,33 @@ new HostingConstruct(this, 'Hosting', {
 
 Lambda and SQS subscriptions are not supported. For a custom action, use the
 alarms in `hosting.monitoring.alarms`.
+
+Until an endpoint is subscribed, the alarms notify no one: an alarm changes
+state in CloudWatch and nothing is sent. While an alarm topic has alarms and
+no subscriber, synth prints an info,
+`@aws-cdk-blocks/hosting:MonitoringAlarmTopicHasNoSubscribers`. It is an info
+and not a warning because monitoring is on by default and a new app has no
+endpoint to subscribe yet. To clear it, do one of these:
+
+- Pass `monitoring.subscriptions`, as above.
+- Subscribe an endpoint to the topic outside the app. Its ARN is the
+  `MonitoringTopicArn` stack output (CDK prefixes the output key with the
+  construct path and appends a hash). Synth can't see a subscription made
+  outside the app, so acknowledge the info too.
+- Add your own action to every alarm in `hosting.monitoring.alarms`.
+- Acknowledge it, to leave the topics unsubscribed on purpose. Each topic
+  reports on its own stack, and outside `us-east-1` the companion stack has
+  the second one:
+
+  ```ts
+  import { Annotations, Stack } from 'aws-cdk-lib';
+
+  for (const topic of hosting.monitoring?.alarmTopics ?? []) {
+    Annotations.of(Stack.of(topic)).acknowledgeInfo(
+      '@aws-cdk-blocks/hosting:MonitoringAlarmTopicHasNoSubscribers',
+    );
+  }
+  ```
 
 ## Secrets & config
 

@@ -2913,6 +2913,34 @@ void describe('CdnConstruct', () => {
         }),
       });
     });
+
+    void it('sets no minimum TLS protocol version without a certificate (no aws-cdk-lib warning)', () => {
+      const stack = createStack();
+      const bucket = new Bucket(stack, 'Bucket');
+      const policy = createSecurityHeadersPolicy(stack, 'SH', {});
+
+      new CdnConstruct(stack, 'Cdn', {
+        bucket,
+        manifest: spaManifest,
+        securityHeadersPolicy: policy,
+      });
+
+      // Without a custom certificate the distribution uses the CloudFront
+      // default certificate, whose security policy is fixed: aws-cdk-lib
+      // ignores `minimumProtocolVersion` and warns when it is passed anyway.
+      // Anchored on the trailing `[ack: <id>]` tag addWarningV2 appends.
+      Annotations.fromStack(stack).hasNoWarning(
+        '*',
+        Match.stringLikeRegexp(
+          '\\[ack: @aws-cdk/aws-cloudfront:minimumProtocolVersionWithoutCertificate\\]$',
+        ),
+      );
+      Template.fromStack(stack).hasResourceProperties('AWS::CloudFront::Distribution', {
+        DistributionConfig: Match.objectLike({
+          ViewerCertificate: Match.absent(),
+        }),
+      });
+    });
   });
 
   // ---- HTTP version ----

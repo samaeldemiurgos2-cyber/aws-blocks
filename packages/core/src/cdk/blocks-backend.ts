@@ -127,9 +127,12 @@ export interface CoreBlocksBackendProps extends BlocksBackendProps {
 }
 
 /**
- * Emit a synth-time warning when the stack is deployed with a durable removal
+ * Emit a synth-time info when the stack is deployed with a durable removal
  * policy but API Gateway access logging is off — so the tradeoff is visible at
  * `cdk synth` rather than discovered as a missing audit trail later.
+ *
+ * An info, not a warning: the condition is `BlocksPresets.production`'s own
+ * default (D-033).
  *
  * `accessLogging` is deliberately off by default in BOTH presets (see the
  * {@link BlocksDefaults.accessLogging} field doc): enabling it provisions the
@@ -146,21 +149,21 @@ export interface CoreBlocksBackendProps extends BlocksBackendProps {
  * protection off (`{ ...BlocksPresets.production, deletionProtection: false }`),
  * and the SNAPSHOT and RETAIN_ON_UPDATE_OR_DELETE removal policies. The sandbox
  * posture (DESTROY) and any explicit `accessLogging: true` override are correctly
- * excluded; any other falsy `accessLogging` still warns, so a plain-JS caller
- * who omits the field gets both the default-off behavior AND this warning (the
- * truthiness check matches how consumer blocks read `defaults.accessLogging`).
- * Warning only — never throws — and fires at most once per
- * BlocksStack/BlocksBackend (so multiple backends in one stack each warn for
- * their own posture).
+ * excluded; any other falsy `accessLogging` still gets the info, so a plain-JS
+ * caller who omits the field gets both the default-off behavior AND this info
+ * (the truthiness check matches how consumer blocks read
+ * `defaults.accessLogging`). Info only — never throws — and emitted at most once
+ * per BlocksStack/BlocksBackend (so multiple backends in one stack each get it
+ * for their own posture).
  *
- * To silence it deliberately, acknowledge the warning on the stack or backend
+ * To silence it deliberately, acknowledge the info on the stack or backend
  * returned by `create()` after it resolves — see the message for the exact call.
  */
-function warnIfDurableWithoutAccessLogging(scope: Construct, defaults: BlocksDefaults): void {
+function infoIfDurableWithoutAccessLogging(scope: Construct, defaults: BlocksDefaults): void {
 	const isDurableAuditGap = defaults.removalPolicy !== cdk.RemovalPolicy.DESTROY && !defaults.accessLogging;
 	if (!isDurableAuditGap) return;
 
-	cdk.Annotations.of(scope).addWarningV2(
+	cdk.Annotations.of(scope).addInfoV2(
 		'blocks:apigateway:access-logging-disabled',
 		'This deployment has a durable removal policy (its stateful resources are not destroyed on ' +
 			'teardown) but API Gateway access logging is disabled, so it has no request-level audit ' +
@@ -171,8 +174,8 @@ function warnIfDurableWithoutAccessLogging(scope: Construct, defaults: BlocksDef
 			"that role in the region, opt in by setting `accessLogging: true` in this backend's " +
 			'`defaults`; opting in also enables S3 server access logging for any FileBucket, each of ' +
 			'which then gets its own log bucket. If leaving it off is deliberate (for example a ' +
-			'multi-stack deployment where another stack owns access logging), acknowledge this warning ' +
-			"by calling `Annotations.of(stack).acknowledgeWarning('blocks:apigateway:access-logging-disabled')` " +
+			'multi-stack deployment where another stack owns access logging), acknowledge this info ' +
+			"by calling `Annotations.of(stack).acknowledgeInfo('blocks:apigateway:access-logging-disabled')` " +
 			'on the stack or backend returned by `create()`.',
 	);
 }
@@ -242,8 +245,8 @@ export function setupBlocksInfra(scope: Construct, props: BlocksBackendProps, id
 	assertBlocksDefaults(props, 'BlocksBackend');
 
 	// Surface the audit-trail tradeoff at synth when running a durable posture
-	// with access logging off. Non-fatal: warning only.
-	warnIfDurableWithoutAccessLogging(scope, props.defaults);
+	// with access logging off. Non-fatal: info only.
+	infoIfDurableWithoutAccessLogging(scope, props.defaults);
 
 	// ── Shared execution role ───────────────────────────────────────────────
 	// A single IAM role that every Building Block grants to. Provisioned here so

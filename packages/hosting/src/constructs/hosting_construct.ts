@@ -122,6 +122,43 @@ const CFN_MAX_RESOURCES_PER_STACK = 500;
 const CFN_RESOURCE_WARNING_THRESHOLD = 450;
 /** Stable id of the plain-HTTP front-door warning; also the `acknowledgeWarning` id. */
 const PLAIN_HTTP_FRONT_DOOR_WARNING_ID = '@aws-cdk-blocks/hosting:PlainHttpFrontDoor';
+/** Stable id of the annotation on a CloudFront 5xx alarm created in an environment-agnostic stack. */
+const CLOUDFRONT_ALARM_REGION_UNRESOLVED_ID = '@aws-cdk-blocks/hosting:CloudFrontAlarmRegionUnresolved';
+
+/**
+ * The level and text of that annotation, by the region the CDK CLI targets.
+ *
+ * `AWS/CloudFront` metrics only publish in us-east-1, so the alarm works only
+ * when the stack is deployed there. The stack does not say where it goes, but
+ * the CDK CLI exports `CDK_DEFAULT_REGION` and deploys an environment-agnostic
+ * stack to that region:
+ *
+ * - `'us-east-1'`: an info (D-033). The alarm works there, but the same
+ *   assembly can be deployed to another region later.
+ * - any other region: a warning. The alarm never fires in this deployment.
+ * - unset (a synth outside the CDK CLI): a warning. The target is unknown.
+ */
+const cloudFrontAlarmRegionNote = (
+  cliRegion: string | undefined,
+): { level: 'info' | 'warning'; message: string } => {
+  const where =
+    cliRegion === 'us-east-1'
+      ? `which is where the CDK CLI deploys this stack (CDK_DEFAULT_REGION), so ` +
+        `the alarm works there. Deployed to any other region it will never fire.`
+      : cliRegion
+        ? `and the CDK CLI deploys this stack to '${cliRegion}' ` +
+          `(CDK_DEFAULT_REGION), so the alarm will never fire.`
+        : `so if this app deploys outside us-east-1 the alarm will never fire.`;
+  return {
+    level: cliRegion === 'us-east-1' ? 'info' : 'warning',
+    message:
+      `The hosting stack is environment-agnostic (region is an unresolved ` +
+      `token), so the CloudFront 5xx alarm is created in the stack itself. ` +
+      `AWS/CloudFront metrics only publish in us-east-1, ${where} Set env: ` +
+      `{ account, region } on the stack so the alarm can be placed in a ` +
+      `us-east-1 support stack (issue #481).`,
+  };
+};
 
 // ---- Public types ----
 
@@ -1813,27 +1850,20 @@ export class HostingConstruct extends Construct {
         //   - region === 'us-east-1'      → alarm created locally (correct).
         //   - region resolved, off-region → alarm deferred to the us-east-1
         //     support stack below.
-        //   - region UNRESOLVED (token)   → we cannot decide at synth where
-        //     the app deploys, so the alarm is created locally. If that
-        //     deploy target turns out NOT to be us-east-1, the alarm can
-        //     never fire (the #481 bug). We can't fix that at synth, but we
-        //     refuse to do it silently. Warn so it's visible in build
-        //     output rather than a green-but-dead alarm.
+        //   - region UNRESOLVED (token)   → the alarm is created locally and
+        //     the synth output says so; see `cloudFrontAlarmRegionNote`.
         const hostingStack = Stack.of(this);
         const region = hostingStack.region;
         const regionResolved = !Token.isUnresolved(region);
         const offRegion = regionResolved && region !== 'us-east-1';
 
         if (!regionResolved && this._distribution) {
-          Annotations.of(this).addWarningV2(
-            '@aws-cdk-blocks/hosting:CloudFrontAlarmRegionUnresolved',
-            `The hosting stack is environment-agnostic (region is an ` +
-              `unresolved token), so the CloudFront 5xx alarm is created ` +
-              `locally. AWS/CloudFront metrics only publish in us-east-1, so ` +
-              `if this app deploys outside us-east-1 the alarm will never ` +
-              `fire. Set env: { account, region } on the stack so the alarm ` +
-              `can be placed in a us-east-1 support stack (issue #481).`,
-          );
+          const note = cloudFrontAlarmRegionNote(process.env.CDK_DEFAULT_REGION);
+          if (note.level === 'info') {
+            Annotations.of(this).addInfoV2(CLOUDFRONT_ALARM_REGION_UNRESOLVED_ID, note.message);
+          } else {
+            Annotations.of(this).addWarningV2(CLOUDFRONT_ALARM_REGION_UNRESOLVED_ID, note.message);
+          }
         }
 
         const monitoring = new MonitoringConstruct(this, 'Monitoring', {

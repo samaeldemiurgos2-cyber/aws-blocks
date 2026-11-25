@@ -223,6 +223,13 @@ export interface AuthCommonOptions {
 	 * `BlocksPresets.sandbox` destroys). Set `'retain'` explicitly for any pool
 	 * holding real users.
 	 *
+	 * Leaving it unset is how one `cdk-blocks/index.ts` retains the pool in
+	 * production and destroys it in a sandbox. Synth warns
+	 * (`@aws-cdk-blocks/bb-auth:RemovalPolicyUnset`) only when it is unset, the
+	 * stack default is `RemovalPolicy.DESTROY`, and the deployment is not a
+	 * sandbox (the `sandboxMode` CDK context): there, deleting the stack deletes
+	 * every user.
+	 *
 	 * The session table has one setting for removal and deletion protection
 	 * (`KVStore`'s `protection`). When this option or `deletionProtection` is
 	 * set, the table is retained and protected if deletion protection resolves

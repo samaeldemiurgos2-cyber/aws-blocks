@@ -5,10 +5,12 @@
 //
 // Publishes all packages to a local file-based registry, then for every
 // scaffoldable template: creates an app from the published CLI (exactly as a
-// customer would), runs its `test:e2e` suite, and runs `vendorize`. The suite
-// is LOCAL ONLY — each template's `test:e2e` boots a mock dev server, so there
-// is no AWS deploy and no credentials are needed. The real deploy/sandbox smoke
-// stays in windows-e2e.yml (scheduled).
+// customer would), runs its `test:e2e` suite, checks that it synthesizes
+// without unexpected warnings (template-synth-warnings.mjs; not on Windows),
+// and runs `vendorize`. The suite is LOCAL ONLY — each template's `test:e2e`
+// boots a mock dev server and `cdk synth` needs no account, so there is no AWS
+// deploy and no credentials are needed. The real deploy/sandbox smoke stays in
+// windows-e2e.yml (scheduled).
 //
 // This is the single harness for the per-PR template suite (it replaced a
 // bash-only script that could not run on Windows), so the same check runs
@@ -24,6 +26,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { killTree, runBool, startRegistry, isWin } from './_proc.mjs';
+import { checkTemplateSynthWarnings } from './template-synth-warnings.mjs';
 import { checkDevLifecycle } from './windows-dev-lifecycle.mjs';
 
 const ROOT = join(fileURLToPath(import.meta.url), '..', '..', '..');
@@ -184,7 +187,7 @@ async function main() {
 	}
 	const createBin = join(work, 'node_modules', '.bin', isWin ? 'create-blocks-app.cmd' : 'create-blocks-app');
 
-	// ── Step 4: per-template loop (scaffold → test:e2e → vendorize) ───────────
+	// ── Step 4: per-template loop (scaffold → test:e2e → synth warnings → vendorize) ──
 	const templates = discoverTemplates();
 	if (templates.length === 0) throw new Error(`no scaffoldable templates found under ${TEMPLATES_DIR}`);
 	console.log(`\nTemplates under e2e: ${templates.join(' ')}`);
@@ -238,6 +241,20 @@ async function main() {
 			console.error(`  FAIL: e2e tests failed for template ${template}`);
 			failed.push(template);
 			continue;
+		}
+
+		// After test:e2e and before vendorize, which replaces a block with its
+		// source: from there on the app is no longer an untouched scaffold.
+		// Skipped on Windows: annotations do not depend on the OS.
+		if (!isWin) {
+			console.log('\n--- Checking synth warnings ---');
+			const problems = checkTemplateSynthWarnings({ template, appDir: app, outDir: join(appParent, 'synth'), env });
+			if (problems.length > 0) {
+				for (const problem of problems) console.error(`  FAIL: ${problem}`);
+				failed.push(`${template} (synth warnings)`);
+				continue;
+			}
+			console.log(`  ✓ Template ${template} synthesizes without unexpected warnings`);
 		}
 
 		console.log('\n--- Testing vendorize task ---');

@@ -380,10 +380,11 @@ jobs:
       - name: Test the stack cleanup's listing failures
         run: node --test scripts/ci/rest-api-quota.test.mjs scripts/ci/cleanup-listings.test.mjs scripts/ci/sweep-cognito-pools.test.mjs
 
-      # The Windows E2E driver's teardown failure reporting and the stack tag
-      # cleanup-stacks.yml needs to reclaim a stack it leaks.
+      # The Windows E2E driver's teardown failure reporting, the stack tag
+      # cleanup-stacks.yml needs to reclaim a stack it leaks, and the template
+      # driver's check that an untouched scaffold synthesizes without warnings.
       - name: Test the CI template driver helpers
-        run: node --test scripts/ci/_proc.test.mjs scripts/ci/_scaffold-tag.test.mjs
+        run: node --test scripts/ci/_proc.test.mjs scripts/ci/_scaffold-tag.test.mjs scripts/ci/template-synth-warnings.test.mjs
 
       # .puppeteerrc.cjs skips Puppeteer's browser download on GitHub Actions,
       # but only for installs under the repo's own node_modules.

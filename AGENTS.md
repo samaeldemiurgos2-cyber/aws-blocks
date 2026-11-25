@@ -214,6 +214,7 @@ When working in an AWS CDK Blocks application (not this monorepo), Building Bloc
 | Schema validation | When a BB accepts a user-provided validation schema, type it as **`StandardSchemaV1`** (Zod/Valibot/ArkType) — don't pull a schema lib into the BB's runtime deps (it's the consumer's choice); if your own tests use `zod`, keep it a `devDependency`. (A BB may take a schema lib as a real `dependency` only for its *own* internal needs, e.g. `bb-agent`.) Validate via `schema['~standard'].validate(value)`, before conditional checks. |
 | Tests | **`node:test` + `node:assert`** (not Jest/Vitest), run on compiled `dist/`. Reset `.cdk-blocks/local/data` between tests. Mock tests can't catch AWS-path serialization bugs — serialization/behavior changes also need a sandbox e2e. |
 | Async | `async/await` only; prefer **`Array.fromAsync()`** over `for await` push-loops. |
+| Synth annotations | A **warning** (`Annotations.addWarningV2`, always with a stable id) is about the app: something its own configuration or deploy target makes wrong or risky. A tradeoff that comes from a preset or a block's defaults is an **info** (`addInfoV2`). An app scaffolded from a template and left unchanged synthesizes with **no warning**; `scripts/ci/template-synth-warnings.mjs` checks every template in production, sandbox and preview mode (E2E Templates and the daily canary) and lists the few warnings a template is meant to show. Never acknowledge an annotation in a template to pass that check. See D-033 in `docs/DECISIONS.md`. |
 
 ---
 

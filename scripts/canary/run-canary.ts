@@ -5,7 +5,8 @@
  * CDK Blocks canary.
  *
  * Scaffolds a fresh app from a published @aws-cdk-blocks registry, then builds it,
- * runs its local e2e (mocks) and runs `cdk synth` (no AWS credentials).
+ * runs its local e2e (mocks) and checks that it synthesizes, in every mode and
+ * with no AWS credentials, without a warning its template isn't meant to show.
  *
  * Usage:
  *   tsx scripts/canary/run-canary.ts [--template <name>] [--registry <url>] [--keep]
@@ -25,9 +26,10 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { checkTemplateSynthWarnings } from "../ci/template-synth-warnings.mjs";
 
 // ── CLI args ────────────────────────────────────────────────────────
 
@@ -212,20 +214,26 @@ function main(): void {
     console.log("\n=== Run local e2e (mocks, no AWS account) ===");
     run("npm", ["run", "test:e2e"], { cwd: appDir, env });
 
-    // ── CDK synth (no AWS account) ──────────────────────────
+    // ── CDK synth warnings (no AWS account) ─────────────────
     // The e2e above runs on mocks, so it never loads the CDK entry points.
-    // Synth does: it resolves the scaffold's fresh `^` aws-cdk-lib range and
+    // Synth does: it resolves the scaffold's fresh aws-cdk-lib range and
     // builds every block's construct, catching a CDK-layer break (a new CDK
     // release, a construct that needs an account lookup) the day it lands
     // rather than on a customer's first deploy. The runner has no AWS
     // credentials, so this also proves a template synthesizes without them.
-    // Warnings (unset feature flags, alarm topic without subscribers) are
-    // expected; only a non-zero exit fails the canary.
-    if (existsSync(join(appDir, "cdk.json"))) {
-      console.log("\n=== CDK synth (no AWS credentials) ===");
-      run("npx", ["--no", "cdk", "synth", "-q"], { cwd: appDir, env });
-    } else {
-      console.log("\n=== CDK synth skipped: template has no cdk.json ===");
+    // The check fails on a warning an untouched scaffold isn't meant to show
+    // (scripts/ci/template-synth-warnings.mjs).
+    console.log("\n=== CDK synth warnings (no AWS credentials) ===");
+    const problems = checkTemplateSynthWarnings({
+      template: args.template,
+      appDir,
+      outDir: join(workDir, "synth"),
+      env,
+    });
+    if (problems.length > 0) {
+      throw new Error(
+        `synth warning check failed (template: ${args.template}):\n  ${problems.join("\n  ")}`,
+      );
     }
 
     console.log(

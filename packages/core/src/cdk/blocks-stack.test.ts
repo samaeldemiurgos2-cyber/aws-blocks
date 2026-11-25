@@ -13,7 +13,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda-nodejs';
 import type { Construct } from 'constructs';
 import type { ScopeParent } from '../common/index.js';
 import { BLOCKS_RPC_PREFIX } from '../constants.js';
-import { AUDIT_WARNING } from './audit-warning-matcher.js';
+import { ACCESS_LOGGING_INFO, ACCESS_LOGGING_INFO_ACK_TAG } from './access-logging-info-matcher.js';
 import { BlocksBackend } from './blocks-backend.js';
 import { ComputeBase } from './compute/compute.js';
 import { getComputes } from './compute/compute-registry.js';
@@ -346,20 +346,31 @@ describe('assertCdkConditionActive', () => {
 	});
 });
 
-describe('production access-logging audit-gap synth warning (BlocksStack path)', () => {
-	// setupBlocksInfra runs the warning on the scope it is passed. BlocksStack
+describe('production access-logging audit-gap synth info (BlocksStack path)', () => {
+	// setupBlocksInfra adds the info on the scope it is passed. BlocksStack
 	// (index.ts) passes itself, so the annotation lands on the stack node — a
 	// different node than the BlocksBackend construct path. This covers the path a
 	// real create-blocks-app takes (`BlocksStack.create` with a durable posture).
-	// AUDIT_WARNING is the shared matcher (see audit-warning-matcher.ts).
+	// ACCESS_LOGGING_INFO is the shared matcher (see access-logging-info-matcher.ts).
 
-	test('BlocksStack with a durable posture and accessLogging off warns at synth', async () => {
+	test('BlocksStack with a durable posture and accessLogging off emits an info at synth, not a warning', async () => {
 		const app = new cdk.App();
 
 		// makeStack uses BlocksPresets.production (durable, accessLogging: false).
-		const stack = await makeStack(app, 'AuditWarnStackLevel', sideEffectBackendPath);
+		const stack = await makeStack(app, 'AuditInfoStackLevel', sideEffectBackendPath);
 
-		Annotations.fromStack(stack).hasWarning('*', AUDIT_WARNING);
+		Annotations.fromStack(stack).hasInfo('*', ACCESS_LOGGING_INFO);
+		// Pins the level (D-033).
+		Annotations.fromStack(stack).hasNoWarning('*', ACCESS_LOGGING_INFO_ACK_TAG);
+	});
+
+	test('BlocksStack on the production preset synthesizes without any warning', async () => {
+		const app = new cdk.App();
+
+		// A template's configuration, unchanged: no warning of any id (D-033).
+		const stack = await makeStack(app, 'NoWarningStackLevel', sideEffectBackendPath);
+
+		assert.deepStrictEqual(Annotations.fromStack(stack).findWarning('*', Match.anyValue()), []);
 	});
 });
 

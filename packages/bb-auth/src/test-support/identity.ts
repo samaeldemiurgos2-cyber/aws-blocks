@@ -108,12 +108,17 @@ export interface SynthesizedAuth extends CdkSynthResult {
  * configuration under which an `AuthCognito` app keeps its `session-secret`
  * parameter (and so its signed-in users) when it switches to `Auth`. Pass
  * `'secrets-manager'` to synthesize the production preset's own store.
+ *
+ * `context` is extra CDK app context, e.g. `{ sandboxMode: 'true' }` for a
+ * sandbox deployment (what `npm run sandbox` sets). Without it the synth is a
+ * deployment that is not a sandbox, whatever `preset` is.
  */
 export function synthIdentity(
 	construct: string,
 	preset?: 'sandbox' | 'production',
 	extraImports: readonly string[] = [],
 	secretsStore: 'ssm' | 'secrets-manager' = 'ssm',
+	context?: Record<string, unknown>,
 ): SynthesizedAuth {
 	const result = synthUnderCdkConditions({
 		imports: [
@@ -125,6 +130,7 @@ export function synthIdentity(
 		build: `const auth = ${construct};\nreport.fullId = auth.fullId;`,
 		preset,
 		secretsStore,
+		context,
 	});
 	const fullId = String(result.report.fullId);
 	const pools = Object.values(result.template.Resources).filter((r) => r.Type === 'AWS::Cognito::UserPool');

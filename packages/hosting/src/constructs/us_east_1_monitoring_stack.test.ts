@@ -15,6 +15,11 @@ import { Match, Template, Annotations } from 'aws-cdk-lib/assertions';
 import * as subs from 'aws-cdk-lib/aws-sns-subscriptions';
 import { UsEast1MonitoringStack } from './us_east_1_monitoring_stack.js';
 
+// The trailing `[ack: <id>]` tag addInfoV2 appends; `$` pins the match to the tag.
+const NO_SUBSCRIBER_ACK_TAG = Match.stringLikeRegexp(
+  '\\[ack: @aws-cdk-blocks/hosting:MonitoringAlarmTopicHasNoSubscribers\\]$',
+);
+
 void describe('UsEast1MonitoringStack', () => {
   const build = (subscriptions?: subs.EmailSubscription[]) => {
     const app = new App();
@@ -98,7 +103,7 @@ void describe('UsEast1MonitoringStack', () => {
     assert.ok(stack.alarm, 'alarm should be exposed');
   });
 
-  void it('warns when its own topic has the 5xx alarm but no subscriber', () => {
+  void it('adds an info when its own topic has the 5xx alarm but no subscriber', () => {
     // Off-region the 5xx alarm lives HERE, not in the regional construct, so
     // this stack must flag its own undeliverable topic — the zero-subscriber
     // scenario an earlier revision let slip through once the regional gate
@@ -108,26 +113,18 @@ void describe('UsEast1MonitoringStack', () => {
       env: { account: '123456789012', region: 'us-east-1' },
       distributionId: 'E1234567890ABC',
     });
-    Annotations.fromStack(stack).hasWarning(
-      '/CfMon',
-      Match.stringLikeRegexp(
-        '\\[ack: @aws-cdk-blocks/hosting:MonitoringAlarmTopicHasNoSubscribers\\]$',
-      ),
-    );
+    Annotations.fromStack(stack).hasInfo('/CfMon', NO_SUBSCRIBER_ACK_TAG);
+    // Pins the level (D-033).
+    Annotations.fromStack(stack).hasNoWarning('*', NO_SUBSCRIBER_ACK_TAG);
   });
 
-  void it('does NOT warn when its topic is subscribed', () => {
+  void it('adds NO info when its topic is subscribed', () => {
     const app = new App();
     const stack = new UsEast1MonitoringStack(app, 'CfMon', {
       env: { account: '123456789012', region: 'us-east-1' },
       distributionId: 'E1234567890ABC',
       subscriptions: [new subs.EmailSubscription('oncall@example.com')],
     });
-    Annotations.fromStack(stack).hasNoWarning(
-      '/CfMon',
-      Match.stringLikeRegexp(
-        '\\[ack: @aws-cdk-blocks/hosting:MonitoringAlarmTopicHasNoSubscribers\\]$',
-      ),
-    );
+    Annotations.fromStack(stack).hasNoInfo('/CfMon', NO_SUBSCRIBER_ACK_TAG);
   });
 });

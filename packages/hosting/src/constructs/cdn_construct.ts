@@ -1534,13 +1534,18 @@ export class CdnConstruct extends Construct {
           : undefined,
       httpVersion: HttpVersion.HTTP2_AND_3,
       priceClass: props.priceClass ?? PriceClass.PRICE_CLASS_100,
-      minimumProtocolVersion: SecurityPolicyProtocol.TLS_V1_2_2021,
+      // `minimumProtocolVersion` is part of the viewer certificate, so it is set
+      // only with a custom certificate. Without one the distribution uses the
+      // CloudFront default certificate, whose security policy is fixed at
+      // TLSv1: aws-cdk-lib ignores the setting and warns
+      // (`@aws-cdk/aws-cloudfront:minimumProtocolVersionWithoutCertificate`).
       ...(props.certificate && props.domainName
         ? {
             domainNames: Array.isArray(props.domainName)
               ? props.domainName
               : [props.domainName],
             certificate: props.certificate,
+            minimumProtocolVersion: SecurityPolicyProtocol.TLS_V1_2_2021,
           }
         : {}),
       ...(props.webAclArn
