@@ -8,7 +8,7 @@ import { ApiError, isBlocksError, Scope } from '@aws-cdk-blocks/core';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { z } from 'zod';
 import { KVStore, KVStoreErrors } from './index.mock.js';
-import { probeKeyType } from './item.js';
+import { cursorStoreTag, probeKeyType } from './item.js';
 
 // Clean mock data between tests to avoid cross-contamination
 beforeEach(() => {
@@ -860,11 +860,19 @@ describe('pages', () => {
 		const first = store.query({ where: { pk: { equals: 'p' } }, limit: 1 });
 		await Array.fromAsync(first);
 		const decoded = JSON.parse(Buffer.from(first.cursor as string, 'base64url').toString('utf8'));
-		assert.deepStrictEqual(decoded, { v: 1, index: null, key: { pk: 'p', sk: 1 } });
+		// `store` tags the cursor with a hash of the store's fullId, not the fullId itself.
+		const tag = cursorStoreTag(store.fullId);
+		assert.deepStrictEqual(decoded, { v: 1, store: tag, index: null, key: { pk: 'p', sk: 1 } });
+		assert.ok(
+			!Buffer.from(first.cursor as string, 'base64url')
+				.toString('utf8')
+				.includes(store.fullId),
+		);
 		const indexed = store.query({ index: 'byN', where: { n: { equals: 'x' } }, limit: 1 });
 		await Array.fromAsync(indexed);
 		assert.deepStrictEqual(JSON.parse(Buffer.from(indexed.cursor as string, 'base64url').toString('utf8')), {
 			v: 1,
+			store: tag,
 			index: 'byN',
 			key: { pk: 'p', sk: 1, n: 'x' },
 		});

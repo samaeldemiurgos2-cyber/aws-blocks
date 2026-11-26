@@ -72,11 +72,12 @@ The merge replaces an array as a whole. `defu` concatenates arrays by default, a
 
 `query` reads one partition of the declared key, or of an index, with at most one sort condition. `scan` reads the table. Both check their options when called, before any I/O, and both return a `Results` object: an `AsyncIterable` of `{ key, value, expiresAt? }` entries with a `cursor` property.
 
-The cursor marks the position after the last entry the iterator returned. It encodes the DynamoDB `LastEvaluatedKey` of that position as base64url JSON: `{ v: 1, index: 'byEmail' | null, key: { ... } }`. The key holds the table key attributes, plus the index key attributes for an index query. The cursor is `undefined` when the read reached the end, and `undefined` before iteration starts. A consumer that stops early still gets the position after the last entry it saw. The cursor holds key values in a readable encoding. It is not a secret and not a permission, so an API method must check authorization on every page.
+The cursor marks the position after the last entry the iterator returned. It encodes the DynamoDB `LastEvaluatedKey` of that position as base64url JSON: `{ v: 1, store: '…', index: 'byEmail' | null, key: { ... } }`. `store` is the first 16 base64url characters of the SHA-256 of the store's `fullId`, so the cursor names its store without showing the table name. The key holds the table key attributes, plus the index key attributes for an index query. The cursor is `undefined` when the read reached the end, and `undefined` before iteration starts. A consumer that stops early still gets the position after the last entry it saw. The cursor holds key values in a readable encoding. It is not a secret and not a permission, so an API method must check authorization on every page.
 
-The block decodes a cursor and checks it against the key schema of the store before the cursor drives a read. The cursor must pass four checks:
+The block decodes a cursor and checks it against the key schema of the store before the cursor drives a read. The cursor must pass five checks:
 
 - It decodes.
+- Its `store` tag is that of this store. A cursor with no tag, as 1.0.0 issued, skips this check, so a cursor held across an upgrade still reads on. `LegacyKVStore` issues untagged cursors.
 - It names the same index as the call.
 - It holds exactly the key attributes of that table or index, each a non-empty string or a finite number.
 - For a `query`, its partition value matches `where`.

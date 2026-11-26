@@ -15,6 +15,7 @@
  * - An expiry goes in `_bkv_ttl`, unless the `ttl` option names a field of the
  *   value.
  */
+import { createHash } from 'node:crypto';
 import type { ChildLogger } from '@aws-cdk-blocks/bb-logger';
 import { marshall } from '@aws-sdk/util-dynamodb';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
@@ -113,6 +114,12 @@ export interface KeyModel {
 	/** The schema of the store, if it has one. */
 	readonly schema: StandardSchemaV1 | undefined;
 	/**
+	 * The tag that the cursors of this store carry, derived from the store's
+	 * `fullId` (see {@link cursorStoreTag}). `undefined` when the model is built
+	 * without a store id; its cursors then carry no tag and any tag is accepted.
+	 */
+	readonly cursorTag?: string;
+	/**
 	 * The DynamoDB attribute type of each key field of the table and of the indexes,
 	 * `'S'` or `'N'`. The type is probed from the schema on first use (see
 	 * {@link probeKeyType}) and then kept, so a store that is never read by key does
@@ -169,8 +176,11 @@ function keyType(model: KeyModel, field: string): 'S' | 'N' {
 	return type;
 }
 
-/** Build the key model from the constructor options. */
-export function resolveKeyModel(options: unknown): KeyModel {
+/**
+ * Build the key model from the constructor options. `storeId` is the `fullId`
+ * of the store; when given, the cursors of the store are tagged with it.
+ */
+export function resolveKeyModel(options: unknown, storeId?: string): KeyModel {
 	const { schema, key, indexes, ttl } = looseOptions(options);
 	// An array of index configs would declare indexes named '0', '1', and so on.
 	if (indexes !== undefined && indexes !== null && !isPlainObject(indexes)) {
@@ -183,6 +193,7 @@ export function resolveKeyModel(options: unknown): KeyModel {
 		ttlAttribute: ttl ?? TTL_ATTRIBUTE,
 		ttlInValue: ttl !== undefined,
 		schema,
+		cursorTag: storeId === undefined ? undefined : cursorStoreTag(storeId),
 		keyTypes: new Map(key ? [] : [[PK_ATTRIBUTE, 'S']]),
 	};
 }
@@ -1187,13 +1198,29 @@ export function normalizeLimit(limit: unknown): number | undefined {
  * A cursor marks the position after the last entry an iterator returned. It
  * encodes the DynamoDB `LastEvaluatedKey` of that position in a readable
  * (base64url JSON) form. The key holds the key attributes of the table, plus
- * those of the index for an index query. It is not a secret and not a
- * permission.
+ * those of the index for an index query. `store` is a tag of the store that
+ * issued the cursor, so a store with the same key shape rejects it. It is not a
+ * secret and not a permission.
  */
 interface CursorPayload {
 	v: 1;
+	/**
+	 * The tag of the issuing store. Cursors issued by earlier versions have no
+	 * `store`, and are still accepted by any store with the same key shape.
+	 */
+	store?: string;
 	index: string | null;
 	key: Record<string, KeyValue>;
+}
+
+/**
+ * The cursor tag of a store: the first 16 base64url characters of the SHA-256
+ * of its `fullId`. A hash keeps the store id (and the table name that derives
+ * from it) out of a cursor that a client can read. The mock and the AWS entry
+ * share a `fullId`, so they tag the same store alike.
+ */
+export function cursorStoreTag(storeId: string): string {
+	return createHash('sha256').update(storeId, 'utf8').digest('base64url').slice(0, 16);
 }
 
 /** The attributes a `LastEvaluatedKey` holds for a read of the table or of an index. */
@@ -1208,7 +1235,10 @@ function cursorFields(model: KeyModel, indexName: string | undefined): string[] 
 export function encodeCursor(model: KeyModel, indexName: string | undefined, item: Item): string {
 	const key: Record<string, KeyValue> = {};
 	for (const field of cursorFields(model, indexName)) key[field] = item[field] as KeyValue;
-	const payload: CursorPayload = { v: 1, index: indexName ?? null, key };
+	const payload: CursorPayload =
+		model.cursorTag === undefined
+			? { v: 1, index: indexName ?? null, key }
+			: { v: 1, store: model.cursorTag, index: indexName ?? null, key };
 	return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
 }
 
@@ -1219,8 +1249,10 @@ export function encodeCursor(model: KeyModel, indexName: string | undefined, ite
  * not arrive here: {@link presentOptions} takes it out of the options at the
  * method entry.
  *
- * The cursor must pass four checks:
+ * The cursor must pass five checks:
  * - It decodes.
+ * - If it carries a store tag, the tag is that of this store. A cursor with no
+ *   tag (issued before stores tagged cursors) skips this check.
  * - It names the same index as the call.
  * - It holds exactly the key attributes of that table or index, each one a value
  *   that {@link checkKeyValue} accepts for its field.
@@ -1245,6 +1277,11 @@ export function decodeCursor(
 		payload = undefined;
 	}
 	if (!isPlainObject(payload) || payload.v !== 1 || !isPlainObject(payload.key)) {
+		throw blocksError(KVStoreErrors.InvalidQuery, KVStoreMessages.cursorInvalid);
+	}
+	// A tag that is present must be this store's. A missing tag is a cursor of an
+	// earlier version, accepted so that a cursor held across an upgrade still works.
+	if (payload.store !== undefined && model.cursorTag !== undefined && payload.store !== model.cursorTag) {
 		throw blocksError(KVStoreErrors.InvalidQuery, KVStoreMessages.cursorInvalid);
 	}
 	const cursorIndex = typeof payload.index === 'string' ? payload.index : undefined;

@@ -150,7 +150,7 @@ export class KVStore<
 		// emits, so this doesn't add noise. Callers can pass their own logger.
 		this.log = options?.logger ?? new Logger(this, 'logger', { level: 'warn' });
 		this.dataDir = getMockDataDir(this);
-		this.model = resolveKeyModel(options);
+		this.model = resolveKeyModel(options, this.fullId);
 		this.reader = createReader(this.model, options?.readValidation ?? 'coerce', this.log, { store: this.fullId });
 		const loaded = loadMockFile(this.dataDir, this.model, this.log, { store: this.fullId });
 		this.data = new Map(loaded.items.map((item) => [serializeKey(this.model, item), item]));

@@ -33,8 +33,8 @@ function testScope() {
  * recorded so the test can assert its shape. `input(i)` strips `TableName`
  * (the store's fullId, unique per test) so expectations can be literal.
  */
-function awsStore(id: string, options?: any, respond: (command: any) => any = () => ({})) {
-	const store = new AwsKVStore(testScope(), id, options as never) as any;
+function awsStore(id: string, options?: any, respond: (command: any) => any = () => ({}), scope = testScope()) {
+	const store = new AwsKVStore(scope, id, options as never) as any;
 	const sent: any[] = [];
 	store.docClient = {
 		send: async (command: any) => {
@@ -52,8 +52,8 @@ function awsStore(id: string, options?: any, respond: (command: any) => any = ()
 }
 
 /** A mock store with loosely typed options, for the parity cases driven by plain JavaScript values. */
-function mockStore(id: string, options?: any): any {
-	return new KVStore(testScope(), id, options as never);
+function mockStore(id: string, options?: any, scope = testScope()): any {
+	return new KVStore(scope, id, options as never);
 }
 
 /** The one table a batch command addresses, and its requests. */
@@ -437,9 +437,11 @@ describe('AWS query', () => {
 		assert.equal(input().Limit, 2);
 		assert.deepEqual(JSON.parse(Buffer.from(first.cursor, 'base64url').toString()), {
 			v: 1,
+			store: store.model.cursorTag,
 			index: null,
 			key: { pk: 'p', sk: 2 },
 		});
+		assert.match(store.model.cursorTag, /^[A-Za-z0-9_-]{16}$/);
 		await Array.fromAsync(store.query({ where: { pk: { equals: 'p' } }, cursor: first.cursor }));
 		assert.deepEqual(input(1).ExclusiveStartKey, { pk: 'p', sk: 2 });
 		// An index cursor carries the index key and the table key.
@@ -453,17 +455,26 @@ describe('AWS query', () => {
 	});
 
 	test('the mock and AWS produce the same cursor for the same item', async () => {
-		const mock = mockStore('t', options);
+		// One scope for both, as in an app: the same store has the same fullId, and so the same cursor tag.
+		const scope = testScope();
+		const mock = mockStore('t', options, scope);
 		await mock.put({ pk: 'p', sk: 1 }, { n: 'a' });
 		const m = mock.query({ where: { pk: { equals: 'p' } }, limit: 1 });
 		await Array.fromAsync(m);
-		const { store } = awsStore('t', options, () => ({
-			Items: [{ pk: 'p', sk: 1, n: 'a' }],
-			LastEvaluatedKey: { pk: 'p', sk: 1 },
-		}));
+		const { store } = awsStore(
+			't',
+			options,
+			() => ({
+				Items: [{ pk: 'p', sk: 1, n: 'a' }],
+				LastEvaluatedKey: { pk: 'p', sk: 1 },
+			}),
+			scope,
+		);
 		const a = store.query({ where: { pk: { equals: 'p' } }, limit: 1 });
 		await Array.fromAsync(a);
 		assert.equal(a.cursor, m.cursor);
+		// A cursor of the mock reads on in the AWS runtime of the same store.
+		await Array.fromAsync(store.query({ where: { pk: { equals: 'p' } }, limit: 1, cursor: m.cursor }));
 	});
 
 	test('both runtimes reject a partition value, a sort operand and a cursor key value that fail the key check, with the same error', async () => {
@@ -509,6 +520,48 @@ describe('AWS query', () => {
 			);
 			await rejects(() => s.scan({ cursor: 'garbage' }), KVStoreErrors.InvalidQuery);
 		}
+	});
+
+	test('both runtimes reject a cursor of another store with the same key shape, and accept an untagged cursor', async () => {
+		// Two stores with the same key shape: before cursors named their store,
+		// a cursor of one read on in the other.
+		const other = mockStore('t-other', options);
+		await other.put({ pk: 'p', sk: 1 }, { n: 'a' });
+		await other.put({ pk: 'p', sk: 2 }, { n: 'b' });
+		const page = other.query({ where: { pk: { equals: 'p' } }, limit: 1 });
+		await Array.fromAsync(page);
+		const scanPage = other.scan({ limit: 1 });
+		await Array.fromAsync(scanPage);
+		assert.ok(page.cursor && scanPage.cursor);
+
+		const mock = mockStore('t', options);
+		const { store: aws, sent } = awsStore('t', options);
+		const fromMock = await rejects(
+			() => mock.query({ where: { pk: { equals: 'p' } }, cursor: page.cursor }),
+			KVStoreErrors.InvalidQuery,
+		);
+		const fromAws = await rejects(
+			() => aws.query({ where: { pk: { equals: 'p' } }, cursor: page.cursor }),
+			KVStoreErrors.InvalidQuery,
+		);
+		assert.equal(fromAws.message, fromMock.message);
+		await rejects(() => mock.scan({ cursor: scanPage.cursor }), KVStoreErrors.InvalidQuery);
+		await rejects(() => aws.scan({ cursor: scanPage.cursor }), KVStoreErrors.InvalidQuery);
+		assert.equal(sent.length, 0, 'a foreign cursor is rejected before a DynamoDB call');
+
+		// A cursor of 1.0.0 has no store tag and still reads on, on both runtimes.
+		const untagged = Buffer.from(JSON.stringify({ v: 1, index: null, key: { pk: 'p', sk: 1 } })).toString(
+			'base64url',
+		);
+		await mock.put({ pk: 'p', sk: 1 }, { n: 'a' });
+		await mock.put({ pk: 'p', sk: 2 }, { n: 'b' });
+		const rest = await Array.fromAsync(mock.query({ where: { pk: { equals: 'p' } }, cursor: untagged }));
+		assert.deepEqual(
+			rest.map((e: any) => e.key),
+			[{ pk: 'p', sk: 2 }],
+		);
+		await Array.fromAsync(aws.query({ where: { pk: { equals: 'p' } }, cursor: untagged }));
+		assert.deepEqual(sent.at(-1).input.ExclusiveStartKey, { pk: 'p', sk: 1 });
 	});
 });
 
