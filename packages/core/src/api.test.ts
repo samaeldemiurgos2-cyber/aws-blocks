@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { ApiNamespace, API_NAMESPACE_COMPUTE, API_NAMESPACE_MARKER } from './api.js';
 import { Scope } from './common/index.js';
+import { resolveApiMethod } from './rpc-dispatch.js';
 
 const scope = new Scope('test');
 
@@ -22,6 +23,29 @@ test('Different ApiNamespace names should not collide', () => {
   
   assert.strictEqual((api1 as any)[API_NAMESPACE_MARKER], 'api1');
   assert.strictEqual((api2 as any)[API_NAMESPACE_MARKER], 'api2');
+});
+
+// A handler may return a class instance: its prototype methods are the API. This test
+// is mostly a compile-time check (the build fails if the constructor's constraint
+// rejects a class again); the runtime half confirms the dispatcher calls those methods.
+test('ApiNamespace accepts a handler that returns a class instance', async () => {
+  class Calculator {
+    private readonly offset = 0;
+    add(a: number, b: number) {
+      return a + b + this.offset;
+    }
+    async negate(a: number) {
+      return -a;
+    }
+  }
+  const api = new ApiNamespace(scope, 'calc', () => new Calculator());
+  // The instance type maps each method to a Promise of its (awaited) result.
+  const typed: { add: (a: number, b: number) => Promise<number>; negate: (a: number) => Promise<number> } = api;
+  assert.strictEqual((typed as any)[API_NAMESPACE_MARKER], 'calc');
+
+  const methods = (api as unknown as () => Calculator)();
+  assert.strictEqual(await resolveApiMethod(methods, 'add')?.(2, 3), 5);
+  assert.strictEqual(await resolveApiMethod(methods, 'negate')?.(4), -4);
 });
 
 // ApiNamespace exposes a resolver for its compute, so the shared gateway can

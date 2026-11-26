@@ -27,7 +27,12 @@ export class ApiError extends Error {
 }
 
 // @public (undocumented)
-export type ApiHandler<T extends Record<string, (...args: any[]) => any>> = (context: BlocksContext) => T;
+export type ApiHandler<T extends ApiMethodMap<T>> = (context: BlocksContext) => T;
+
+// @public
+export type ApiMethodMap<T> = {
+    [K in keyof T]: (...args: any[]) => any;
+};
 
 // @public (undocumented)
 export const ApiNamespace: ApiNamespaceConstructor;
@@ -35,7 +40,7 @@ export const ApiNamespace: ApiNamespaceConstructor;
 // @public
 export interface ApiNamespaceConstructor {
     // (undocumented)
-    new <T extends Record<string, (...args: any[]) => any>>(scope: ScopeParent, label: string, handler: ApiHandler<T>, options?: ApiNamespaceOptions): AsyncAPI<T>;
+    new <T extends ApiMethodMap<T>>(scope: ScopeParent, label: string, handler: (context: BlocksContext) => T & ThisType<Record<string, (...args: any[]) => any>>, options?: ApiNamespaceOptions): AsyncAPI<T>;
 }
 
 // @public
@@ -49,7 +54,7 @@ export interface ApiNamespaceOptions {
 }
 
 // @public
-export type AsyncAPI<T extends Record<string, (...args: any[]) => any>> = {
+export type AsyncAPI<T extends ApiMethodMap<T>> = {
     [K in keyof T]: T[K] extends (...args: infer Args) => infer R ? (...args: Args) => Promise<Awaited<R>> : never;
 };
 

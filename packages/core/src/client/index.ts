@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 export type BlocksContext = any;
-export type ApiHandler<T extends Record<string, (...args: any[]) => any>> = any;
+/** Mirrors `ApiMethodMap` in ../api.ts: plain objects and class instances both satisfy it. */
+export type ApiMethodMap<T> = { [K in keyof T]: (...args: any[]) => any };
+export type ApiHandler<T extends ApiMethodMap<T>> = any;
 import { encodeRpcRequest, decodeRpcResponse } from '../rpc.js';
 import { BLOCKS_SANDBOX_PREFIX } from '../constants.js';
 import { contextFetch } from './fetch-store.js';
@@ -23,7 +25,7 @@ function getSsrCookies(): string | undefined {
   return store.getStore();
 }
 
-type AsyncAPI<T extends Record<string, (...args: any[]) => any>> = {
+type AsyncAPI<T extends ApiMethodMap<T>> = {
   [K in keyof T]: T[K] extends (...args: infer Args) => infer R
     ? (...args: Args) => Promise<Awaited<R>>
     : never;
@@ -367,7 +369,7 @@ const API_NAMESPACE_ID = Symbol.for('aws-blocks.apiNamespace');
  * timeout, not an abort, not a failure after the response headers arrived (while reading the
  * body), not an HTTP or RPC error. Browsers already do this resend themselves.
  */
-export function ApiNamespaceClient<T extends Record<string, (...args: any[]) => any>>(
+export function ApiNamespaceClient<T extends ApiMethodMap<T>>(
   name: string,
   options?: ApiNamespaceClientOptions,
 ): AsyncAPI<T> {

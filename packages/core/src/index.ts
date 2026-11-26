@@ -15,7 +15,7 @@ export {
 	secret,
 	type ValueKind,
 } from '@aws-cdk-blocks/hosting';
-export { type ApiHandler, ApiNamespace, type ApiNamespaceConstructor, type ApiNamespaceOptions, type AsyncAPI, type BlocksContext } from './api.js';
+export { type ApiHandler, type ApiMethodMap, ApiNamespace, type ApiNamespaceConstructor, type ApiNamespaceOptions, type AsyncAPI, type BlocksContext } from './api.js';
 export {
 	type ComputeOptions,
 	type ComputeType,

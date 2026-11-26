@@ -70,10 +70,19 @@ export type BlocksContext = {
   };
 };
 
-export type ApiHandler<T extends Record<string, (...args: any[]) => any>> = (context: BlocksContext) => T;
+/**
+ * The shape an `ApiNamespace` handler returns: an object whose public members are all
+ * methods. Either a plain object literal or a class instance works, since the RPC
+ * dispatcher calls methods a class defines on its prototype. Written as a mapped type
+ * over `keyof T` rather than `Record<string, …>` because a class instance has no
+ * string index signature, so it is not assignable to a `Record`.
+ */
+export type ApiMethodMap<T> = { [K in keyof T]: (...args: any[]) => any };
+
+export type ApiHandler<T extends ApiMethodMap<T>> = (context: BlocksContext) => T;
 
 /** The type of an `ApiNamespace` instance: each method of `T`, returning a `Promise` of its result. */
-export type AsyncAPI<T extends Record<string, (...args: any[]) => any>> = {
+export type AsyncAPI<T extends ApiMethodMap<T>> = {
   [K in keyof T]: T[K] extends (...args: infer Args) => infer R
     ? (...args: Args) => Promise<Awaited<R>>
     : never;
@@ -414,10 +423,13 @@ export interface ApiNamespaceConstructor {
    *   namespace by the name it is exported under from the backend module, so
    *   `export const api = new ApiNamespace(scope, 'todos', handler)` is called as `api.list()`.
    */
-  new <T extends Record<string, (...args: any[]) => any>>(
+  new <T extends ApiMethodMap<T>>(
     scope: ScopeParent,
     label: string,
-    handler: ApiHandler<T>,
+    // `ThisType` keeps `this` inside an object-literal method typed as it was under the
+    // old `Record<string, …>` constraint; without it, a method calling `this.other()`
+    // stops type-checking because `this` would be the unresolved `ApiMethodMap<T>`.
+    handler: (context: BlocksContext) => T & ThisType<Record<string, (...args: any[]) => any>>,
     options?: ApiNamespaceOptions,
   ): AsyncAPI<T>;
 }

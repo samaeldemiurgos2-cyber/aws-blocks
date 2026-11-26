@@ -74,7 +74,7 @@ An id is checked at `cdk synth`, not when the scope is constructed:
 
 ## ApiNamespace
 
-`new ApiNamespace<T>(scope: ScopeParent, label: string, handler: ApiHandler<T>, options?: ApiNamespaceOptions): AsyncAPI<T>`, where `handler` is `(context: BlocksContext) => T`. Each method of the returned object becomes an RPC endpoint and a method of the typed client. Clients call the namespace by the name it is exported under, not by `label`.
+`new ApiNamespace<T extends ApiMethodMap<T>>(scope: ScopeParent, label: string, handler: (context: BlocksContext) => T, options?: ApiNamespaceOptions): AsyncAPI<T>`, where `T` is a plain object or a class instance whose public members are all methods. Each method of the returned object becomes an RPC endpoint and a method of the typed client. Clients call the namespace by the name it is exported under, not by `label`.
 
 ```typescript
 import { ApiNamespace } from '@aws-cdk-blocks/core';
