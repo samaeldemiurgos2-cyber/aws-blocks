@@ -1706,6 +1706,48 @@ describe('CannedProvider', () => {
 		assert.strictEqual((await agent.getConversation(convId, { userId: 'test-user', limit: -1 })).length, 0, 'negative limit should return an empty array, not all messages');
 	});
 
+	// Regression: a limit that isn't an integer used to be read loosely. `1.5` capped at
+	// the first count >= 1.5 (2 messages), and NaN never compared true, so the whole
+	// history came back. Anything that isn't an integer is a usage error.
+	test("getConversation rejects a limit that is not an integer", async () => {
+		const scope = new Scope('test-limit-int');
+		const agent = new Agent(scope, 'limint', { systemPrompt: 'test', model: { deployed: { provider: 'canned' }, local: { provider: 'canned' } } });
+		const convId = await agent.createConversationId('test-user');
+		for (const msg of ['first', 'second']) {
+			const r = await agent.stream(msg, { conversationId: convId, userId: 'test-user' });
+			await r.complete();
+		}
+		for (const limit of [1.5, -0.5, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+			await assert.rejects(
+				() => agent.getConversation(convId, { userId: 'test-user', limit }),
+				(err: any) => err.name === AgentErrors.InvalidUsage && /limit/.test(err.message),
+				`limit ${limit} should throw InvalidUsage`,
+			);
+		}
+		// An untyped RPC caller can send a non-number; it must not be coerced.
+		const untyped: { userId: string; limit?: number } = JSON.parse('{"userId":"test-user","limit":"1"}');
+		await assert.rejects(
+			() => agent.getConversation(convId, untyped),
+			(err: any) => err.name === AgentErrors.InvalidUsage,
+			'a string limit should throw InvalidUsage',
+		);
+		// JSON has no `undefined`, so a caller may send `null` meaning "no limit". It used to
+		// return [] (null <= 0); it now throws rather than guessing. Omit limit instead.
+		const nullLimit: { userId: string; limit?: number } = JSON.parse('{"userId":"test-user","limit":null}');
+		await assert.rejects(
+			() => agent.getConversation(convId, nullLimit),
+			(err: any) => err.name === AgentErrors.InvalidUsage && /got null/.test(err.message),
+			'a null limit should throw InvalidUsage',
+		);
+		// The same check applies whether or not the caller owns the conversation.
+		await assert.rejects(
+			() => agent.getConversation(convId, { userId: 'someone-else', limit: 1.5 }),
+			(err: any) => err.name === AgentErrors.InvalidUsage,
+		);
+		// Integers keep working.
+		assert.strictEqual((await agent.getConversation(convId, { userId: 'test-user', limit: 1 })).length, 1);
+	});
+
 	test("token mode publishes multiple chunks", async () => {
 		const scope = new Scope('test-token');
 		const agent = new Agent(scope, 'tok', { systemPrompt: 'test', model: { deployed: { provider: 'canned' }, local: { provider: 'canned' } }, streamingMode: 'token' });

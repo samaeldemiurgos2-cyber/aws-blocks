@@ -42,7 +42,7 @@ const agent = new Agent(scope, id, config)
 | `stream(message, options?)` | `Promise<AgentStreamResult>` | Submit a message. Returns immediately with `{ channelId, channel, complete }`. |
 | `resume(channelId, responses, options?)` | `Promise<void>` | Resume an interrupted agent with user responses. Chunks publish to the same channel. |
 | `createConversationId(userId)` | `Promise<string>` | Generate a new conversation ID (UUID). |
-| `getConversation(id, { userId, limit? })` | `Promise<Message[]>` | Get messages in a conversation, oldest first. `{ limit }` returns only the most recent N, still oldest first; a `limit` of 0 or less returns `[]`. Empty unless `userId` owns the conversation. |
+| `getConversation(id, { userId, limit? })` | `Promise<Message[]>` | Get messages in a conversation, oldest first. `{ limit }` returns only the most recent N, still oldest first; a `limit` of 0 or less returns `[]`, and a `limit` that isn't an integer throws `AgentErrors.InvalidUsage`. Empty unless `userId` owns the conversation. |
 | `listConversations(userId)` | `Promise<Conversation[]>` | List the conversations a user owns, newest-updated first. |
 | `deleteConversation(id, userId)` | `Promise<void>` | Delete a conversation and its session data. |
 | `getPendingInterrupts(conversationId, { userId })` | `Promise<Array<...>>` | Get unanswered interrupts (for reload support). Empty unless `userId` owns the conversation. |

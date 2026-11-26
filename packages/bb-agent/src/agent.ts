@@ -1123,11 +1123,19 @@ export class AgentBase<TContext = DefaultToolContext> extends Scope {
 	 * @param options.limit - Maximum number of (most recent) messages to return.
 	 *   A `limit` of `0` returns an empty array, and any negative value is treated
 	 *   the same as `0` (returns no messages). Omit `limit` to return all messages.
+	 *   Throws InvalidUsage when `limit` is not an integer (a fraction, `NaN` or `Infinity`).
 	 * TODO: support pagination
 	 */
 	async getConversation(id: string, options: { userId: string; limit?: number }): Promise<Message[]> {
 		if (!this.messages) throw blocksAgentError(AgentErrors.PersistenceRequired, 'getConversation() requires persistence. Set inferenceOnly: false (default).');
 		const userId = this.requireUserId(options, 'getConversation', 'getConversation(id, { userId, limit? })');
+		// A message count has to be an integer. Without this check `1.5` capped at the first
+		// count >= 1.5 (2 messages) and NaN never compared true, so the whole history came
+		// back; an untyped RPC caller's string was coerced. Checked before the ownership
+		// lookup so the error doesn't depend on whose conversation it is.
+		if (options.limit !== undefined && !Number.isInteger(options.limit)) {
+			throw blocksAgentError(AgentErrors.InvalidUsage, `getConversation() limit must be an integer, got ${String(options.limit)}. Omit limit to return all messages.`);
+		}
 		if (!(await this.ownsConversation(id, userId))) return [];
 		// A limit of 0 means "zero messages", and a negative limit is nonsensical
 		// for a message count. The previous `options?.limit && ...` guard treated 0
