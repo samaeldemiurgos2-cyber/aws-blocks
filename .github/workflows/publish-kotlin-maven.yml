@@ -1,14 +1,31 @@
 name: Publish Kotlin to Maven Central
 
-# The repository's Gradle build runs only in `build`, which holds no id-token and no
-# secrets. `publish` runs no repository code: it signs the staged publication with
-# gpg and uploads it to the Central Portal. `release` tags and creates the release.
+# `gate` decides whether this commit has a version to publish. The repository's
+# Gradle build runs only in `build`, which holds no id-token and no secrets.
+# `publish` runs no repository code: it signs the staged publication with gpg and
+# uploads it to the Central Portal. `release` tags and creates the release.
 # dry_run: build, stage, sign and bundle, then stop before upload, tag and release.
+# A dry run skips the tag check in `gate`, so it works on an already-released
+# version too.
 
+# Triggered by the push of a release commit to main rather than by the merge of
+# the release PR. A pull_request run deploys from refs/pull/<n>/merge, which is
+# not a branch and so satisfies no deployment branch policy on the
+# publish-maven environment; a push to main deploys from refs/heads/main, which
+# does.
+#
+# The release signal is therefore "VERSION_NAME at the pushed commit has no
+# kotlin@<version> tag", not "a release PR was merged". If a publish fails after
+# the release PR merges, the next push to main that touches gradle.properties
+# publishes that version from its own, later commit. To publish from a chosen
+# commit instead, recover with a workflow_dispatch from main.
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches: [main]
+    # The release PR bumps VERSION_NAME. `gate` filters out the other pushes
+    # that touch this file.
+    paths:
+      - native/kotlin/gradle.properties
   workflow_dispatch:
     inputs:
       dry_run:
@@ -24,35 +41,90 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  gate:
+    # Publishes from main only: the push trigger above restricts the branch, and
+    # this restricts a manual dispatch to the same one.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      publish: ${{ steps.meta.outputs.publish }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: /native/kotlin/gradle.properties
+          sparse-checkout-cone-mode: false
+
+      # The release tag is the record of what has been published. A version that
+      # already carries one stops here, so neither an unrelated push that edits
+      # gradle.properties nor a repeated dispatch re-uploads a release.
+      # A dry run skips the check: it stops before upload, tag and release, so it
+      # can safely rehearse a version that is already published.
+      # The lookup fails closed: only a 404 means "not tagged". Any other error
+      # fails the run rather than risk a duplicate upload.
+      - name: Decide whether this version needs publishing
+        id: meta
+        working-directory: native/kotlin
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry_run == true }}
+        run: |
+          set -euo pipefail
+          VERSION=$(grep '^VERSION_NAME=' gradle.properties | cut -d= -f2)
+          if [ -z "$VERSION" ]; then
+            echo "::error::No VERSION_NAME in native/kotlin/gradle.properties"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "Dry run of kotlin@${VERSION} from ${GITHUB_SHA} — skipping the tag check."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # stderr is captured to tell a 404 from any other failure.
+          if ERR=$(gh api "repos/${GH_REPO}/git/ref/tags/kotlin@${VERSION}" 2>&1 > /dev/null); then
+            echo "kotlin@${VERSION} is already tagged — nothing to publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          elif printf '%s' "$ERR" | grep -q 'HTTP 404'; then
+            echo "Publishing kotlin@${VERSION} from ${GITHUB_SHA}."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Could not check for the kotlin@${VERSION} tag"
+            printf '%s\n' "$ERR"
+            exit 1
+          fi
+
   build:
-    # Publish on a manual dispatch from main, or when a release/kotlin-* PR is merged.
-    if: >
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-      (github.event.pull_request.merged == true &&
-       startsWith(github.event.pull_request.head.ref, 'release/kotlin-'))
+    needs: gate
+    if: needs.gate.outputs.publish == 'true'
     # The runtime has iOS targets, which only build on a macOS host.
     runs-on: macos-latest
     permissions:
       contents: read
     outputs:
       sha: ${{ steps.meta.outputs.sha }}
-      version: ${{ steps.meta.outputs.version }}
+      # Resolved once, by `gate`, from the same commit.
+      version: ${{ needs.gate.outputs.version }}
     defaults:
       run:
         working-directory: native/kotlin
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # For the merge event, check out the merged commit. For a manual
-          # dispatch, the dispatched commit on main.
-          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+          # The pushed release commit on main, or the dispatched commit.
+          ref: ${{ github.sha }}
           persist-credentials: false
 
-      - name: Read release commit and version
+      - name: Read release commit
         id: meta
-        run: |
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          echo "version=$(grep '^VERSION_NAME=' gradle.properties | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
