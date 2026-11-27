@@ -2,50 +2,138 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from 'node:assert';
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { describe, it } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, before, describe, it } from 'node:test';
+import { KVStore } from '@aws-cdk-blocks/bb-kv-store';
+import { z } from 'zod';
 
+import { listLocalStores } from './bb-data.js';
 import {
 	describeKvStoreKeys,
 	indexOfKvItem,
 	isKvStoreFile,
 	isStringKeyed,
-	KV_PK_ATTRIBUTE,
-	KV_RESERVED_PREFIX,
-	KV_STORE_FILE_VERSION,
-	KV_TTL_ATTRIBUTE,
-	KV_VALUE_ATTRIBUTE,
 	kvStoreFileOf,
 	readKvItem,
 	replaceKvItem,
 	reservedFieldOf,
 } from './kv-store-file.js';
+import { type LocalWriteContext, putLocalRecord } from './local-writes.js';
 
 const STRING_KEYS = { stringKeyed: true, keyFields: ['key'] };
 const DECLARED_KEYS = { stringKeyed: false, keyFields: ['userId', 'createdAt'] };
 
-describe('the names this module shares with bb-kv-store', () => {
-	// The block owns the layout; this package only reads it, and has no
-	// dependency on the block to import the names from. In the repository the
-	// block's sources are next to this package, so the test compares the two.
-	const kvStoreSources = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'bb-kv-store', 'src');
+describe('a data file shared with the KVStore block', () => {
+	const TODO_KEY = { partitionKey: 'userId', sortKey: 'createdAt' } as const;
+	const TODO_SCHEMA = z.object({ userId: z.string(), createdAt: z.number(), title: z.string() });
+	const APP = { id: 'app' };
+	const EXPIRES_AT = 4_000_000_000;
 
-	it('are the attribute names, the file name and the file version that the block writes', (t) => {
-		if (!existsSync(join(kvStoreSources, 'ttl.ts'))) {
-			t.skip('the bb-kv-store sources are not next to this package');
-			return;
+	const cwd = process.cwd();
+	let projectRoot: string;
+	before(() => {
+		projectRoot = mkdtempSync(join(tmpdir(), 'kv-store-file-test-'));
+		process.chdir(projectRoot);
+	});
+	after(() => {
+		process.chdir(cwd);
+		rmSync(projectRoot, { recursive: true, force: true });
+	});
+
+	function todoStore(id: string) {
+		return new KVStore(APP, id, { schema: TODO_SCHEMA, key: TODO_KEY });
+	}
+
+	function itemsOnDisk(blockFullId: string): unknown[] {
+		const stores = listLocalStores(projectRoot, blockFullId);
+		assert.strictEqual(stores.length, 1, `expected one data file for ${blockFullId}`);
+		const text = readFileSync(stores[0].file, 'utf-8');
+		const parsed: unknown = JSON.parse(text);
+		if (!isKvStoreFile(parsed)) assert.fail(`${stores[0].file} is not a KVStore data file: ${text}`);
+		return parsed.items;
+	}
+
+	it('reads what a store with a string key wrote', async () => {
+		const store = new KVStore<unknown>(APP, 'cache');
+		const written = [
+			{ key: 'greeting', value: 'hello' },
+			{ key: 'profile', value: { name: 'Ada', tags: ['a'] } },
+			{ key: 'scores', value: [1, 2] },
+			{ key: 'otp', value: '123456', expiresAt: EXPIRES_AT },
+		];
+		for (const { key, value, expiresAt } of written) await store.put(key, value, { expiresAt });
+
+		const items = itemsOnDisk(store.fullId);
+		const keys = describeKvStoreKeys(items, []);
+		assert.deepStrictEqual(keys, STRING_KEYS);
+		const records = items.map((item) => readKvItem(item, keys));
+		assert.strictEqual(records.length, written.length);
+		for (const { key, value, expiresAt } of written) {
+			assert.deepStrictEqual(await store.get(key), value);
+			assert.deepStrictEqual(
+				records.find((record) => record.keyValues?.key === key),
+				expiresAt === undefined ? { keyValues: { key }, value } : { keyValues: { key }, value, expiresAt },
+			);
 		}
-		const names = readFileSync(join(kvStoreSources, 'ttl.ts'), 'utf-8');
-		assert.ok(names.includes(`RESERVED_PREFIX = '${KV_RESERVED_PREFIX}'`));
-		assert.ok(names.includes(`PK_ATTRIBUTE = '${KV_PK_ATTRIBUTE}'`));
-		assert.ok(names.includes(`VALUE_ATTRIBUTE = '${KV_VALUE_ATTRIBUTE}'`));
-		assert.ok(names.includes(`TTL_ATTRIBUTE = '${KV_TTL_ATTRIBUTE}'`));
+	});
 
-		const file = readFileSync(join(kvStoreSources, 'mock-file.ts'), 'utf-8');
-		assert.ok(file.includes("FILE_NAME = 'store.json'"));
-		assert.ok(file.includes(`FILE_VERSION = ${KV_STORE_FILE_VERSION};`));
+	it('reads what a store with declared key fields wrote', async () => {
+		const store = todoStore('todos');
+		const written = [
+			{ key: { userId: 'u1', createdAt: 9 }, title: 'first', expiresAt: EXPIRES_AT },
+			{ key: { userId: 'u2', createdAt: 12 }, title: 'second' },
+		];
+		for (const { key, title, expiresAt } of written) await store.put(key, { title }, { expiresAt });
+
+		const items = itemsOnDisk(store.fullId);
+		const keys = describeKvStoreKeys(items, [TODO_KEY.partitionKey, TODO_KEY.sortKey]);
+		assert.deepStrictEqual(keys, DECLARED_KEYS);
+		const records = items.map((item) => readKvItem(item, keys));
+		assert.strictEqual(records.length, written.length);
+		for (const { key, title, expiresAt } of written) {
+			const value = { ...key, title };
+			const keyValues = { userId: key.userId, createdAt: String(key.createdAt) };
+			assert.deepStrictEqual(await store.get(key), value);
+			assert.deepStrictEqual(
+				records.find((record) => record.keyValues?.userId === key.userId),
+				expiresAt === undefined ? { keyValues, value } : { keyValues, value, expiresAt },
+			);
+		}
+	});
+
+	it('writes an edit that the store reads, with the key and the expiry it had', async () => {
+		const key = { userId: 'u1', createdAt: 9 };
+		const untouched = { userId: 'u2', createdAt: 12 };
+		const store = todoStore('edited');
+		await store.put(key, { title: 'first' }, { expiresAt: EXPIRES_AT });
+		await store.put(untouched, { title: 'second' });
+		const context: LocalWriteContext = {
+			projectRoot,
+			blockFullId: store.fullId,
+			keySchema: TODO_KEY,
+			detectDevServer: async () => ({
+				serverUp: false,
+				serverUrl: 'http://localhost:3000',
+				port: 3000,
+				portSource: 'default',
+				namespaces: [],
+				bbDataPresent: true,
+			}),
+		};
+
+		const edit = await putLocalRecord(context, { userId: 'u1', createdAt: '9', title: 'edited' }, 'edit');
+		assert.strictEqual(edit.ok, true, edit.message);
+
+		const reopened = todoStore('edited');
+		const entries = [];
+		for await (const entry of reopened.scan()) entries.push(entry);
+		assert.deepStrictEqual(entries, [
+			{ key, value: { ...key, title: 'edited' }, expiresAt: EXPIRES_AT },
+			{ key: untouched, value: { ...untouched, title: 'second' } },
+		]);
+		assert.deepStrictEqual(await reopened.get(key), { ...key, title: 'edited' });
 	});
 });
 
