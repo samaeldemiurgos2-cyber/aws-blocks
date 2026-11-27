@@ -517,6 +517,8 @@ export const Realtime: {
 		validateChannelPath(fullChannel);
 		// Real WebSocket for cross-invocation publish (established once secret resolves)
 		let wsSub: ServerSubscription | null = null;
+		// The secret resolves asynchronously; an unsubscribe before then must prevent the socket from opening.
+		let cancelled = false;
 		// Local EventEmitter for same-invocation publish, until the socket is live
 		// (see server-subscribe.ts), so each message reaches the handler once.
 		const local = localListener(handler, () => wsSub);
@@ -525,7 +527,7 @@ export const Realtime: {
 		if (wsUrl) {
 			const fullId = this.fullId;
 			getTokenSecretOrNull().then(secret => {
-				if (!secret) return; // secret store unavailable (e.g., codegen)
+				if (!secret || cancelled) return; // secret store unavailable (e.g., codegen) or already unsubscribed
 				// Never leaves the server and only subscribes to fullChannel, so scope it exactly.
 				const channelToken = mintChannelToken(fullChannel, secret, undefined, 'exact');
 				const connectToken = mintConnectToken(fullId, secret);
@@ -533,6 +535,7 @@ export const Realtime: {
 			}).catch(() => {});
 		}
 		return () => {
+			cancelled = true;
 			this._localEmitter.off(fullChannel, local);
 			if (wsSub) wsSub.unsubscribe();
 		};
