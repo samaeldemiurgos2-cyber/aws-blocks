@@ -261,6 +261,8 @@ const sub = channel.subscribe((msg) => {
 await sub.established; // wait for server confirmation
 ```
 
+Declaring a `Realtime` block adds its client middleware to the generated client, and that middleware runs on the result of every API call in the app, not only methods that return channels. It replaces each channel descriptor, at any depth, with a live channel and copies every other object and array with the same own keys (a JSON key such as `"__proto__"` stays an ordinary key); other values are unchanged.
+
 ### Server-side subscribe
 
 In a trusted server-side worker, subscribe for the duration of the work and close the subscription before the worker exits:

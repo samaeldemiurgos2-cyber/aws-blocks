@@ -59,6 +59,8 @@ const bucket = new FileBucket(scope, id, options?)
 | `FileBucket.fromExisting(bucketName)` | `ExternalBucketRef` | Wrap a pre-existing S3 bucket. Pass to `options.bucket`. |
 | `FileBucket.fromKmsKey(keyArn)` | `ExternalKmsKeyRef` | Reference an existing customer-managed KMS key. Pass to `options.encryption`. |
 
+Return `getFileHandle()` and `createUploadHandle()` results from an API method and the browser receives live `FileDownloadClient` / `FileUploadClient` handles. Declaring a `FileBucket` adds the client middleware that does this to the generated client, and it runs on the result of every API call in the app: it replaces each handle descriptor, at any depth, and copies every other object and array with the same own keys (a JSON key such as `"__proto__"` stays an ordinary key); other values are unchanged.
+
 ### Options
 
 | Option | Type | Default | Description |
