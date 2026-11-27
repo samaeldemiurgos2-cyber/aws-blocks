@@ -24,7 +24,7 @@ import type { BlocksContext } from '@aws-cdk-blocks/core';
 import { isBlocksError } from '@aws-cdk-blocks/core';
 import { signSessionId } from './cookies.js';
 import { AuthErrors } from './index.aws.js';
-import type { SessionStore } from './sessions.js';
+import type { SessionRecord, SessionStore } from './sessions.js';
 import {
 	Browser,
 	cognitoError,
@@ -57,6 +57,12 @@ function tokensRow(tokens: { IdToken: string; AccessToken: string; RefreshToken?
 /** The block's session store, for writing a row as a concurrent request would. */
 function sessionsOf(h: ReturnType<typeof makeAwsAuth>): SessionStore {
 	return Reflect.get(h.auth, 'sessions');
+}
+
+async function refreshConcurrently(sessions: SessionStore, sid: string, next: SessionRecord): Promise<void> {
+	const current = await sessions.read(sid);
+	assert.ok(current, 'the session exists when the concurrent request reads it');
+	assert.strictEqual(await sessions.replaceIfUnchanged(sid, current.row, next), true);
 }
 
 /** A token-bearing call: Cognito's `ChangePassword` with the session's access token. */
@@ -245,7 +251,7 @@ describe('AWS session refresh (expired access token)', () => {
 		const concurrent = h.idp.authResult('alice', { claims: { email: 'concurrent@example.com' } });
 		h.on('GetTokensFromRefreshTokenCommand', async () => {
 			// Another request refreshes the same session first...
-			await sessionsOf(h).replace(sid, tokensRow(concurrent));
+			await refreshConcurrently(sessionsOf(h), sid, tokensRow(concurrent));
 			// ...and this request's own refresh is rejected (its refresh token was rotated away).
 			throw cognitoError('NotAuthorizedException', 'Refresh Token has been revoked');
 		});
@@ -259,7 +265,7 @@ describe('AWS session refresh (expired access token)', () => {
 		const { h, b, sid } = await signedInWithExpiredAccess();
 		const concurrent = h.idp.authResult('alice', { claims: { email: 'concurrent@example.com' } });
 		h.on('GetTokensFromRefreshTokenCommand', async () => {
-			await sessionsOf(h).replace(sid, tokensRow(concurrent));
+			await refreshConcurrently(sessionsOf(h), sid, tokensRow(concurrent));
 			return { AuthenticationResult: h.idp.authResult('alice', { claims: { email: 'mine@example.com' } }) };
 		});
 		const user = await b.request((ctx) => h.auth.getCurrentUser(ctx));

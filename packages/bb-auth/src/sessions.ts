@@ -523,16 +523,6 @@ export class SessionStore {
 	}
 
 	/**
-	 * Replace a session's row (sliding its TTL forward). Not conditional. The
-	 * row gets the version after the one the store holds now, so a caller that
-	 * read the row before this write fails its conditional write.
-	 */
-	async replace(sessionId: string, record: SessionRecord): Promise<void> {
-		const version = (versionOf(await this.kv.get(sessionId)) ?? 0) + 1;
-		await this.kv.put(sessionId, { ...record, version }, this.writeOptions());
-	}
-
-	/**
 	 * Write `next` only if the session still holds `row` — the row the caller
 	 * read with {@link read} (compare-and-swap, sliding the TTL forward). Returns
 	 * `true` when `next` was written; `false` (nothing written) when the session
