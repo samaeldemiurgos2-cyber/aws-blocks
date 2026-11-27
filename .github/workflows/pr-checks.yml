@@ -459,6 +459,25 @@ jobs:
       - name: Build
         run: npm run build
 
+      # A real PostgreSQL for the tests that need more than one connection: the
+      # local engine has a single session, so it cannot tell a statement that
+      # joined a transaction from one that ran on another pooled connection.
+      # The runner image ships the server stopped and listening on loopback
+      # only, so nothing is pulled. Its password is random per job and masked.
+      - name: Start PostgreSQL
+        run: |
+          set -euo pipefail
+          sudo systemctl start postgresql.service
+          for _ in $(seq 1 30); do
+            if pg_isready --quiet; then break; fi
+            sleep 1
+          done
+          pg_isready
+          password="$(openssl rand -hex 16)"
+          echo "::add-mask::$password"
+          sudo -u postgres psql --quiet --set ON_ERROR_STOP=1 --command "ALTER ROLE postgres PASSWORD '$password'"
+          echo "BLOCKS_TEST_POSTGRES_URL=postgres://postgres:$password@127.0.0.1:5432/postgres" >> "$GITHUB_ENV"
+
       - name: Unit Tests
         env:
           # The real-CDK stream-routing probe in packages/core guards the issue #222
@@ -471,6 +490,9 @@ jobs:
           # Fail, rather than skip, the core runtime-guard e2e test when the built
           # BB it imports cannot be resolved, so a rename cannot drop it silently.
           BLOCKS_REQUIRE_RUNTIME_GUARD_E2E: '1'
+          # Fail, rather than skip, the tests that need the PostgreSQL server the
+          # step above started; it exports BLOCKS_TEST_POSTGRES_URL.
+          BLOCKS_REQUIRE_POSTGRES_TESTS: '1'
           SHARD: ${{ matrix.shard }}
           SHARDS: ${{ strategy.job-total }}
         # npm run test:unit is npm run test --workspaces; this runs the same
