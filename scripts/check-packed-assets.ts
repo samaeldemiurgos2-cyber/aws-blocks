@@ -16,9 +16,9 @@
  * Run after `npm run build` and before any test step.
  */
 
-import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, posix, relative, resolve, sep } from 'node:path';
+import { packedFiles } from './packed-files.ts';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const PACKAGES_DIR = join(ROOT, 'packages');
@@ -85,17 +85,6 @@ function findAssetRefs(pkgDir: string): AssetRef[] {
 		}
 	}
 	return refs;
-}
-
-/** The package-relative paths `npm pack` would publish. */
-function packedFiles(pkgDir: string): string[] {
-	const out = execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
-		cwd: pkgDir,
-		encoding: 'utf-8',
-		stdio: ['ignore', 'pipe', 'pipe'],
-	});
-	const [entry] = JSON.parse(out) as { files: { path: string }[] }[];
-	return entry.files.map((f) => f.path);
 }
 
 function main(): number {

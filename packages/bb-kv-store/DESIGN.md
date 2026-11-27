@@ -60,7 +60,7 @@ Both runtimes derive the expression and the `retriable` flag from `putCondition`
 
 Every read hides an item whose TTL attribute has passed, in both runtimes, because DynamoDB deletes an expired item asynchronously (typically within 48 hours). `scan({ includeExpired: true })` is the one way to see such an item, for a cleanup sweep. TTL is always on for a table the block creates, on `_bkv_ttl` or on the `ttl` field.
 
-A store with a `schema` checks each item that it reads against the schema. The `readValidation` option sets how, and it defaults to `'coerce'`. [D-015](../../docs/DECISIONS.md#d-015-kvstore-reads-default-to-readvalidation-coerce-not-off) records why.
+A store with a `schema` checks each item that it reads against the schema. The `readValidation` option sets how, and it defaults to `'coerce'`. [D-015](https://github.com/aws/cdk-blocks/blob/main/docs/DECISIONS.md#d-015-kvstore-reads-default-to-readvalidation-coerce-not-off) records why.
 
 - `'coerce'` merges the output of the schema over the stored item. Defaults fill in. Stored fields that the schema does not declare stay, so a read followed by a `put` does not delete them. An item that fails validation is returned as stored, with a warning.
 - `'strict'` throws `ValidationFailedException` for an item that fails validation.
@@ -311,7 +311,7 @@ The `D-DT-*` decisions of the former `DistributedTable` block that still apply a
 
 ### D-KV-10: `readValidation` is `off`, `coerce`, or `strict`, and defaults to `coerce`
 
-The default choice (`'coerce'` over `'off'`) is recorded as a cross-cutting decision in [`docs/DECISIONS.md` D-015](../../docs/DECISIONS.md#d-015-kvstore-reads-default-to-readvalidation-coerce-not-off). Writes always validate. A read of a store with a schema checks each stored item against the schema, as the mode says. `'coerce'` returns the output of the schema merged over the raw item, so defaults fill in, types narrow, and undeclared stored keys stay. For an item that fails validation, it returns the raw item with a warning. `'strict'` throws `ValidationFailedException`. `'off'` returns the raw item. Coercion depends on the validator. A validator that only checks returns its input unchanged. Both runtimes call the same `applyReadValidation` in `errors.ts`. A store with no schema returns the raw value.
+The default choice (`'coerce'` over `'off'`) is recorded as a cross-cutting decision in [`docs/DECISIONS.md` D-015](https://github.com/aws/cdk-blocks/blob/main/docs/DECISIONS.md#d-015-kvstore-reads-default-to-readvalidation-coerce-not-off). Writes always validate. A read of a store with a schema checks each stored item against the schema, as the mode says. `'coerce'` returns the output of the schema merged over the raw item, so defaults fill in, types narrow, and undeclared stored keys stay. For an item that fails validation, it returns the raw item with a warning. `'strict'` throws `ValidationFailedException`. `'off'` returns the raw item. Coercion depends on the validator. A validator that only checks returns its input unchanged. Both runtimes call the same `applyReadValidation` in `errors.ts`. A store with no schema returns the raw value.
 
 ### D-KV-11: Secure-by-default durability and encryption, from the stack `BlocksDefaults`, with one `protection` option
 

@@ -264,7 +264,7 @@ The model takes a failed request to have never reached the server; a request the
 
 All auth BBs manage session cookies via `BlocksContext`:
 
-- **Setting cookies:** By default the BB sets an `HttpOnly`, `SameSite=Lax` cookie (`Secure` in production) on `context.response.headers` after successful authentication. When `crossDomain: true`, it switches to `SameSite=None; Secure; Partitioned`. See [D-007](../../docs/DECISIONS.md#d-007-auth-cookies-default-to-samesitelax-cross-domain-is-opt-in).
+- **Setting cookies:** By default the BB sets an `HttpOnly`, `SameSite=Lax` cookie (`Secure` in production) on `context.response.headers` after successful authentication. When `crossDomain: true`, it switches to `SameSite=None; Secure; Partitioned`. See [D-007](https://github.com/aws/cdk-blocks/blob/main/docs/DECISIONS.md#d-007-auth-cookies-default-to-samesitelax-cross-domain-is-opt-in).
 - **Reading cookies:** `requireAuth`/`checkAuth`/`getCurrentUser` read the session cookie from `context.request.headers`
 - **Clearing cookies:** `signOut` clears the cookie via `Max-Age=0`
 

@@ -42,6 +42,7 @@ function runGuard(files) {
 	try {
 		mkdirSync(join(dir, 'scripts'), { recursive: true });
 		copyFileSync(join(SCRIPTS_DIR, GUARD_NAME), join(dir, 'scripts', GUARD_NAME));
+		copyFileSync(join(SCRIPTS_DIR, 'packed-files.ts'), join(dir, 'scripts', 'packed-files.ts'));
 		for (const [rel, content] of Object.entries(files)) {
 			const abs = join(dir, 'packages', rel);
 			mkdirSync(join(abs, '..'), { recursive: true });
