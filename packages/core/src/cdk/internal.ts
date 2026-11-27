@@ -125,3 +125,4 @@ export {
 	type ResolvedKmsEncryption,
 	resolveKmsEncryption,
 } from './kms-encryption.js';
+export { assertEveryRoleBoundedAndReported, GUARD_BOUNDARY } from './permissions-boundary-guard.js';

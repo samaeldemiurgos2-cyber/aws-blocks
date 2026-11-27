@@ -27,6 +27,8 @@ const INTERNAL_ONLY = [
 	'sourceScopedConditions',
 	'markBlocksOwned',
 	'markAddedChildrenBlocksOwned',
+	'assertEveryRoleBoundedAndReported',
+	'GUARD_BOUNDARY',
 ] as const;
 
 describe('@aws-cdk-blocks/core/cdk/internal', () => {

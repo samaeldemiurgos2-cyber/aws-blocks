@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from 'node:assert';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 /**
@@ -27,7 +27,7 @@ import { isBlocksError } from '@aws-cdk-blocks/core';
 import { sanitizeConfigKey } from '@aws-cdk-blocks/core/bb-utils';
 import { BlocksPresets, BlocksStack, Scope, getRegisteredConfigValue } from '@aws-cdk-blocks/core/cdk';
 import type { DefaultComputeFactory } from '@aws-cdk-blocks/core/cdk/internal';
-import { ComputeBase } from '@aws-cdk-blocks/core/cdk/internal';
+import { assertEveryRoleBoundedAndReported, ComputeBase, GUARD_BOUNDARY } from '@aws-cdk-blocks/core/cdk/internal';
 import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 import type { IWidget } from 'aws-cdk-lib/aws-cloudwatch';
@@ -380,58 +380,6 @@ describe('CronJob runner marker', () => {
 // Every AWS::IAM::Role in every synthesized template (custom-resource provider
 // roles and any other stack or helper stack's roles included) must carry the
 // configured boundary and be listed in the synth-time IAM report.
-//
-// Keep in sync: the same helper is copied in the bb-auth (`boundary.cdk.test.ts`), bb-compute, bb-container-compute and bb-dashboard
-// cdk test files, and mirrors core's `assertEveryRoleBounded` in
-// `packages/core/src/cdk/permissions-boundary.test.ts`. A fix to one copy
-// belongs in all of them.
-
-const GUARD_BOUNDARY = 'blocks-guard-boundary';
-const GUARD_EXPECTED = {
-	'Fn::Join': [
-		'',
-		['arn:', { Ref: 'AWS::Partition' }, ':iam::', { Ref: 'AWS::AccountId' }, `:policy/${GUARD_BOUNDARY}`],
-	],
-};
-
-/**
- * Read every top-level template and the IAM report in `outdir`; fail on a role
- * without the boundary or missing from the report. Returns the checked roles as
- * `<artifact>/<logicalId>` (for asserting a block's own roles were reached).
- *
- * Only the top level of the cloud assembly is read: templates from a CDK `Stage`
- * (written under `assembly-*` folders) are not. No block tested here creates a Stage.
- */
-function assertEveryRoleBoundedAndReported(outdir: string, reportFile: string): string[] {
-	const report = JSON.parse(readFileSync(join(outdir, reportFile), 'utf8')) as {
-		roles: { stack: string; logicalId: string; permissionsBoundary: unknown }[];
-	};
-	const reported = new Set(report.roles.map((r) => `${r.stack}/${r.logicalId}`));
-	const checked: string[] = [];
-	const problems: string[] = [];
-	for (const file of readdirSync(outdir).filter((f) => f.endsWith('.template.json'))) {
-		const artifact = file.slice(0, -'.template.json'.length);
-		const { Resources = {} } = JSON.parse(readFileSync(join(outdir, file), 'utf8')) as {
-			Resources?: Record<string, { Type: string; Properties?: { PermissionsBoundary?: unknown } }>;
-		};
-		for (const [id, r] of Object.entries(Resources)) {
-			if (r.Type !== 'AWS::IAM::Role') continue;
-			const key = `${artifact}/${id}`;
-			checked.push(key);
-			if (JSON.stringify(r.Properties?.PermissionsBoundary) !== JSON.stringify(GUARD_EXPECTED)) {
-				problems.push(`${key}: boundary ${JSON.stringify(r.Properties?.PermissionsBoundary ?? 'NONE')}`);
-			}
-			if (!reported.has(key)) problems.push(`${key}: missing from ${reportFile}`);
-		}
-	}
-	assert.ok(checked.length > 0, 'synth should produce at least one role');
-	assert.deepStrictEqual(
-		problems,
-		[],
-		`roles not covered by defaults.permissionsBoundary:\n  ${problems.join('\n  ')}`,
-	);
-	return checked;
-}
 
 describe('CronJob under defaults.permissionsBoundary', () => {
 	test('every role it creates (scheduler role included) carries the boundary and is in blocks-iam.json', async () => {
